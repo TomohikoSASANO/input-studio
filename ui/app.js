@@ -1166,6 +1166,8 @@ function bind() {
   // 追加モード：クリックで配置
   const ov = $("#overlay")
   if (ov) {
+    // enable overlay interactions for selection/editing
+    enableOverlayPointer(!!state.projectPath)
     const toPageXY = (ev) => {
       const img = $("#previewImg")
       if (!img || !img.src) return null
