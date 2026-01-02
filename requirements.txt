@@ -1,0 +1,7 @@
+pywebview>=5.4
+pypdf>=4.3
+reportlab>=4.2
+Pillow>=10.4
+pdf2image>=1.17
+pymupdf>=1.26.7
+
