@@ -5,6 +5,7 @@ const $ = (sel) => document.querySelector(sel)
 // 画面を動かせるモックAPIを注入する。
 ;(function ensureDemoApi() {
   if (window.pywebview?.api) return
+  window.__INPUTSTUDIO_DEMO__ = true
 
   const demo = {
     projectName: "デモ案件：外國語書類一式",
@@ -253,6 +254,27 @@ function saveLocal(key, val) {
   } catch {}
 }
 
+function getRenderedContentRect(imgEl, pageW, pageH) {
+  // imgEl is sized to its container, with object-fit: contain.
+  // We need the actual rendered content box to avoid coordinate drift.
+  const r = imgEl.getBoundingClientRect()
+  const cw = Math.max(1, r.width)
+  const ch = Math.max(1, r.height)
+  const iw = Math.max(1, Number(pageW || imgEl.naturalWidth || 1))
+  const ih = Math.max(1, Number(pageH || imgEl.naturalHeight || 1))
+  const s = Math.min(cw / iw, ch / ih)
+  const dw = iw * s
+  const dh = ih * s
+  const dx = (cw - dw) / 2
+  const dy = (ch - dh) / 2
+  return {
+    left: r.left + dx,
+    top: r.top + dy,
+    width: dw,
+    height: dh,
+  }
+}
+
 function deepClone(obj) {
   return JSON.parse(JSON.stringify(obj))
 }
@@ -498,6 +520,16 @@ function render() {
           <div style="flex:1">初めて：PDFを選んで新規プロジェクトを作成（フォーム検出なし。自分で欄を配置）</div>
           <button class="chip chip--soft" id="btnOpenPdf">PDFから新規</button>
         </div>
+        ${
+          window.__INPUTSTUDIO_DEMO__
+            ? `<div class="guide__row">
+                <span class="guide__step">1b</span>
+                <div style="flex:1">デモ：このブラウザでPDFを読み込んで表示（Pages用）</div>
+                <button class="chip chip--soft" id="btnDemoLoadPdf">PDFを読み込む</button>
+                <input type="file" id="demoPdfFile" accept=".pdf,application/pdf" style="display:none" />
+              </div>`
+            : ""
+        }
         <div class="guide__row">
           <span class="guide__step">2</span>
           <div style="flex:1">続きから：既存の案件（プロジェクト）を開いて編集/入力を再開</div>
@@ -813,6 +845,73 @@ function bind() {
     state.privateTotal = 0
     toast("案件を読み込みました")
     render()
+  }
+
+  // --- Demo: load real PDF in browser (GitHub Pages) -----------------------
+  const btnDemoLoadPdf = $("#btnDemoLoadPdf")
+  const demoPdfFile = $("#demoPdfFile")
+  if (btnDemoLoadPdf && demoPdfFile) {
+    btnDemoLoadPdf.onclick = () => demoPdfFile.click()
+    demoPdfFile.onchange = async () => {
+      const file = demoPdfFile.files?.[0]
+      if (!file) return
+      try {
+        toast("PDFを読み込み中…")
+        const buf = await file.arrayBuffer()
+        // dynamic import pdf.js as ESM from CDN
+        const pdfjs = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/build/pdf.mjs")
+        pdfjs.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/build/pdf.worker.mjs"
+        const doc = await pdfjs.getDocument({ data: buf }).promise
+
+        // attach to demo api if present
+        window.__demoPdfDoc = doc
+        window.__demoPdfCache = new Map()
+
+        // override preview API to render real PDF pages
+        const api = window.pywebview.api
+        api.get_preview_png_base64_page = async (page_index) => {
+          const idx = Math.max(0, Math.min(doc.numPages - 1, Number(page_index || 0)))
+          const cache = window.__demoPdfCache
+          if (cache.has(idx)) return cache.get(idx)
+          const page = await doc.getPage(idx + 1)
+          const scale = 1.6
+          const vp = page.getViewport({ scale })
+          const canvas = document.createElement("canvas")
+          canvas.width = Math.floor(vp.width)
+          canvas.height = Math.floor(vp.height)
+          const ctx = canvas.getContext("2d")
+          await page.render({ canvasContext: ctx, viewport: vp }).promise
+          const blob = await new Promise((res) => canvas.toBlob(res, "image/png"))
+          const url = URL.createObjectURL(blob)
+          const out = { ok: true, png: url, page_display_width: canvas.width, page_display_height: canvas.height, page_index: idx }
+          cache.set(idx, out)
+          return out
+        }
+        api.get_preview_png_base64 = async (tag) => {
+          // keep compatibility
+          const t = String(tag || "").trim()
+          const pl = state.placements?.[t]
+          const idx = pl ? Number(pl.page || 0) : 0
+          return api.get_preview_png_base64_page(idx)
+        }
+
+        state.projectPath = "demo:pdf"
+        state.projectName = file.name
+        state.pageCount = doc.numPages
+        state.previewPageIndex = 0
+        state.tags = []
+        state.values = {}
+        state.placements = {}
+        state.showTagPane = false
+        saveLocal("inputstudio-show-tagpane", state.showTagPane)
+        toast(`PDFを読み込みました（${doc.numPages}ページ）`)
+        render()
+      } catch (e) {
+        alert(`PDF読み込みに失敗しました: ${e}`)
+      } finally {
+        demoPdfFile.value = ""
+      }
+    }
   }
 
   const btnOpenPdf = $("#btnOpenPdf")
@@ -1171,13 +1270,13 @@ function bind() {
     const toPageXY = (ev) => {
       const img = $("#previewImg")
       if (!img || !img.src) return null
-      const imgRect = img.getBoundingClientRect()
-      const x0 = ev.clientX - imgRect.left
-      const y0 = ev.clientY - imgRect.top
-      if (x0 < 0 || y0 < 0 || x0 > imgRect.width || y0 > imgRect.height) return null
-      const x = (x0 / imgRect.width) * state.pageW
-      const y = (y0 / imgRect.height) * state.pageH
-      return { x, y, imgRect }
+      const box = getRenderedContentRect(img, state.pageW, state.pageH)
+      const x0 = ev.clientX - box.left
+      const y0 = ev.clientY - box.top
+      if (x0 < 0 || y0 < 0 || x0 > box.width || y0 > box.height) return null
+      const x = (x0 / box.width) * state.pageW
+      const y = (y0 / box.height) * state.pageH
+      return { x, y, box }
     }
 
     const hitTest = (pt) => {
@@ -1919,12 +2018,12 @@ function drawOverlay() {
   const hasSelection = (state.selectKeys || []).length > 0
   if ((!state.designMode && !state.addMode && !hasSelection) || !img || !img.src) return
 
-  // 画像が表示されている矩形（centered/letterbox を想定）
-  const imgRect = img.getBoundingClientRect()
-  const ox = imgRect.left - rect.left
-  const oy = imgRect.top - rect.top
-  const iw = imgRect.width
-  const ih = imgRect.height
+  // 画像の実描画領域（object-fit: contain の余白を除外）
+  const box = getRenderedContentRect(img, state.pageW, state.pageH)
+  const ox = box.left - rect.left
+  const oy = box.top - rect.top
+  const iw = box.width
+  const ih = box.height
 
   // 枠
   ctx.save()
