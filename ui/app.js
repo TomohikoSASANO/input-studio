@@ -260,8 +260,9 @@ function getRenderedContentRect(imgEl, pageW, pageH) {
   const r = imgEl.getBoundingClientRect()
   const cw = Math.max(1, r.width)
   const ch = Math.max(1, r.height)
-  const iw = Math.max(1, Number(pageW || imgEl.naturalWidth || 1))
-  const ih = Math.max(1, Number(pageH || imgEl.naturalHeight || 1))
+  // Prefer actual intrinsic image aspect; fall back to logical page size.
+  const iw = Math.max(1, Number(imgEl.naturalWidth || pageW || 1))
+  const ih = Math.max(1, Number(imgEl.naturalHeight || pageH || 1))
   const s = Math.min(cw / iw, ch / ih)
   const dw = iw * s
   const dh = ih * s
@@ -874,7 +875,9 @@ function bind() {
           const cache = window.__demoPdfCache
           if (cache.has(idx)) return cache.get(idx)
           const page = await doc.getPage(idx + 1)
-          const scale = 1.6
+          // Align demo coordinate system with desktop backend:
+          // backend renders at RENDER_DPI=150 (pt -> px via 72dpi base)
+          const scale = 150 / 72
           const vp = page.getViewport({ scale })
           const canvas = document.createElement("canvas")
           canvas.width = Math.floor(vp.width)
@@ -1781,12 +1784,13 @@ async function openDesignModal() {
     const toXY = (ev) => {
       const img = $("#previewImg")
       if (!img || !img.src) return null
-      const imgRect = img.getBoundingClientRect()
-      const x0 = ev.clientX - imgRect.left
-      const y0 = ev.clientY - imgRect.top
-      if (x0 < 0 || y0 < 0 || x0 > imgRect.width || y0 > imgRect.height) return null
-      const x = (x0 / imgRect.width) * state.pageW
-      const y = (y0 / imgRect.height) * state.pageH
+      // Use actual rendered content rect (object-fit: contain) to avoid drift.
+      const box = getRenderedContentRect(img, state.pageW, state.pageH)
+      const x0 = ev.clientX - box.left
+      const y0 = ev.clientY - box.top
+      if (x0 < 0 || y0 < 0 || x0 > box.width || y0 > box.height) return null
+      const x = (x0 / box.width) * state.pageW
+      const y = (y0 / box.height) * state.pageH
       return { x, y }
     }
 
