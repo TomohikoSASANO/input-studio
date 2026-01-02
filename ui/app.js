@@ -1601,5 +1601,16 @@ async function boot() {
   render()
 }
 
-window.addEventListener("pywebviewready", boot)
+let _booted = false
+async function bootOnce() {
+  if (_booted) return
+  _booted = true
+  await boot()
+}
+
+// Desktop (pywebview) emits this event. Web demo (Pages) does not.
+window.addEventListener("pywebviewready", bootOnce)
+// Web demo entrypoint
+window.addEventListener("DOMContentLoaded", bootOnce)
+if (document.readyState !== "loading") bootOnce()
 
