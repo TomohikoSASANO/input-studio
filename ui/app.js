@@ -1,5 +1,165 @@
 const $ = (sel) => document.querySelector(sel)
 
+// --- Web demo mode (GitHub Pages) ------------------------------------------
+// GitHub上で「実画面レビュー」を回すため、pywebviewが無い環境では
+// 画面を動かせるモックAPIを注入する。
+;(function ensureDemoApi() {
+  if (window.pywebview?.api) return
+
+  const demo = {
+    projectName: "デモ案件：外國語書類一式",
+    projectPath: "demo/project.json",
+    pageCount: 58,
+    uiMode: "worker",
+    tags: [],
+    values: {},
+    placements: {}, // tag -> {page,x,y,font_size}
+  }
+
+  const makeSvgDataUrl = (pageIndex) => {
+    const w = 1240
+    const h = 1754
+    const p = pageIndex + 1
+    const n = demo.pageCount
+    const placed = Object.entries(demo.placements).filter(([, pl]) => Number(pl?.page || 0) === pageIndex)
+    const overlay = placed
+      .map(([tag, pl]) => {
+        const v = String(demo.values[tag] || "").replaceAll("<br>", "\n")
+        const x = Math.max(24, Math.min(w - 24, Number(pl.x || 0)))
+        const y = Math.max(24, Math.min(h - 24, Number(pl.y || 0)))
+        const fs = Math.max(10, Math.min(36, Number(pl.font_size || 14)))
+        const safe = v.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+        return `<text x="${x}" y="${y}" font-size="${fs}" fill="#0f172a" font-family="Arial, sans-serif">${safe}</text>`
+      })
+      .join("")
+
+    const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f3f4ff"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="${w}" height="${h}" fill="url(#bg)"/>
+  <rect x="40" y="40" width="${w - 80}" height="${h - 80}" fill="#ffffff" stroke="rgba(15,23,42,0.10)" stroke-width="2" rx="18"/>
+  <text x="72" y="110" font-size="28" fill="rgba(15,23,42,0.75)" font-family="Arial, sans-serif">Input Studio デモプレビュー</text>
+  <text x="72" y="150" font-size="18" fill="rgba(15,23,42,0.55)" font-family="Arial, sans-serif">ページ ${p} / ${n}</text>
+  <g opacity="0.18">
+    <rect x="90" y="220" width="${w - 180}" height="${h - 320}" fill="none" stroke="#7c5cff" stroke-width="2" stroke-dasharray="10 10" rx="10"/>
+  </g>
+  ${overlay}
+</svg>`
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+  }
+
+  const api = {
+    async get_admin_settings() {
+      return { ok: true, settings: { ui_mode: demo.uiMode } }
+    },
+    async get_workers() {
+      return {
+        ok: true,
+        workers: [
+          { id: "w_demo", name: "デモ作業者", bank: "", hourly_yen: 0 },
+          { id: "w_demo2", name: "デモ作業者2", bank: "", hourly_yen: 0 },
+        ],
+        last_worker_id: "w_demo",
+      }
+    },
+    async pick_project() {
+      return { ok: true, path: demo.projectPath }
+    },
+    async pick_pdf() {
+      return { ok: true, path: "demo.pdf" }
+    },
+    async create_project_from_pdf_simple() {
+      demo.tags = []
+      demo.values = {}
+      demo.placements = {}
+      return { ok: true, path: demo.projectPath }
+    },
+    async load_project() {
+      return {
+        ok: true,
+        project: demo.projectName,
+        tags: demo.tags,
+        values: demo.values,
+        drop_dir: "demo/exports",
+        ui_mode: demo.uiMode,
+        page_count: demo.pageCount,
+      }
+    },
+    async save_current_project() {
+      return { ok: true }
+    },
+    async set_ui_mode(mode) {
+      demo.uiMode = String(mode || "worker")
+      return { ok: true }
+    },
+    async start_work() {
+      return { ok: true }
+    },
+    async toggle_private() {
+      return { ok: true, in_private: false }
+    },
+    async finish() {
+      return { ok: true, dir: "demo/exports", zip: "demo.zip" }
+    },
+    async set_value(tag, value) {
+      demo.values[String(tag)] = String(value ?? "")
+      return { ok: true }
+    },
+    async add_text_field(tag, page, x, y, font_size) {
+      const t = String(tag || "").trim()
+      if (!t) return { ok: false, error: "missing_tag" }
+      if (!demo.tags.includes(t)) demo.tags.push(t)
+      demo.placements[t] = { page: Number(page || 0), x: Number(x || 0), y: Number(y || 0), font_size: Number(font_size || 14) }
+      return { ok: true, tag: t }
+    },
+    async set_element_pos(tag, x, y) {
+      const t = String(tag || "").trim()
+      const pl = demo.placements[t] || { page: 0, x: 0, y: 0, font_size: 14 }
+      pl.x = Number(x || 0)
+      pl.y = Number(y || 0)
+      demo.placements[t] = pl
+      return { ok: true }
+    },
+    async get_element_info(tag) {
+      const t = String(tag || "").trim()
+      const pl = demo.placements[t]
+      if (!pl) return { ok: false, error: "not_found" }
+      return {
+        ok: true,
+        page: Number(pl.page || 0),
+        x: Number(pl.x || 0),
+        y: Number(pl.y || 0),
+        font_size: Number(pl.font_size || 14),
+        page_display_width: 1240,
+        page_display_height: 1754,
+      }
+    },
+    async get_preview_png_base64_page(page_index) {
+      const idx = Math.max(0, Math.min(demo.pageCount - 1, Number(page_index || 0)))
+      return {
+        ok: true,
+        png: makeSvgDataUrl(idx),
+        page_display_width: 1240,
+        page_display_height: 1754,
+        page_index: idx,
+      }
+    },
+    async get_preview_png_base64(tag) {
+      const t = String(tag || "").trim()
+      const pl = demo.placements[t]
+      const idx = pl ? Number(pl.page || 0) : 0
+      return api.get_preview_png_base64_page(idx)
+    },
+  }
+
+  window.pywebview = { api }
+})()
+
 // いろんなママさんペルソナで“最大公約数”に寄せた設計（後述）:
 // - 夜に作業する（暗めでも目が疲れない）
 // - 片手でも押せる（大きいタップ領域、下に主要アクション）
