@@ -344,7 +344,15 @@ select:focus,.input:focus,.textarea:focus{box-shadow:0 0 0 5px rgba(124,92,255,.
   height:100%;
   display:block;
   object-fit:contain; /* アスペクト比維持 */
+  -webkit-user-drag: none;
+  -webkit-user-select: none;
+  user-select: none;
+  pointer-events: none; /* 画像ドラッグを完全に殺して overlay に渡す */
 }
+.confetti{position:absolute; inset:0; pointer-events:none; z-index:3}
+.overlay{position:absolute; inset:0; pointer-events:none; z-index:4}
+.overlay.is-active{pointer-events:auto; cursor:crosshair}
+.emptyHint{z-index:5}
 
 /* タグ0のとき：PDF上に次アクションを提示（邪魔にならない） */
 .emptyHint{
@@ -363,9 +371,7 @@ select:focus,.input:focus,.textarea:focus{box-shadow:0 0 0 5px rgba(124,92,255,.
 .emptyHint__title{font-weight:900; font-size:14px}
 .emptyHint__text{margin-top:4px; font-size:12px; color:var(--muted); line-height:1.4}
 .emptyHint__actions{margin-top:10px; display:flex; gap:10px; flex-wrap:wrap}
-.confetti{position:absolute; inset:0; pointer-events:none}
-.overlay{position:absolute; inset:0; pointer-events:none}
-.overlay.is-active{pointer-events:auto; cursor:crosshair}
+/* (duplicated rules removed; see z-indexed version above) */
 
 .toast{
   position:fixed;

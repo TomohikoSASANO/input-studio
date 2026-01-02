@@ -604,7 +604,7 @@ function render() {
     ${
       state.projectPath
         ? `<div class="previewImg">
-            <img id="previewImg" alt="preview" />
+            <img id="previewImg" alt="preview" draggable="false" />
             <canvas id="confetti" class="confetti" aria-hidden="true"></canvas>
             <canvas id="overlay" class="overlay"></canvas>
             ${
