@@ -17,6 +17,8 @@ import webview
 from pdf2image import convert_from_path
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.lib.colors import HexColor
 
 try:
     import fitz  # PyMuPDF (in-process PDF renderer)
@@ -208,6 +210,7 @@ class Api:
                 "project": data.get("project") or p.parent.name,
                 "tags": list(data.get("tags") or []),
                 "values": dict(data.get("values") or {}),
+                "placements": dict(data.get("placements") or {}),
                 "drop_dir": str((p.parent / "exports").resolve()),
                 "ui_mode": self._ui_mode,
                 "path": str(p),
@@ -257,6 +260,32 @@ class Api:
                 self._page_cache.popitem(last=False)
         except Exception:
             pass
+
+    def _invalidate_pages(self, pages: set[int] | None = None) -> None:
+        """Invalidate cached preview PNGs for given pages (or all)."""
+        try:
+            if pages is None:
+                self._page_cache.clear()
+                d = self._cache_dir()
+                for p in d.glob("page_*.png"):
+                    try:
+                        p.unlink()
+                    except Exception:
+                        pass
+                return
+            for pi in pages:
+                try:
+                    self._page_cache.pop(int(pi), None)
+                except Exception:
+                    pass
+                try:
+                    fp = self._cache_png_path(int(pi))
+                    if fp.exists():
+                        fp.unlink()
+                except Exception:
+                    pass
+        except Exception:
+            return
 
     def _render_page_png_url(self, idx: int) -> tuple[str, int, int]:
         # disk cache first (instant + no huge bridge payload)
@@ -320,6 +349,48 @@ class Api:
             except Exception:
                 font = lambda sz: None  # type: ignore
 
+            def _hex_to_rgba(h: str) -> tuple[int, int, int, int]:
+                s = (h or "").strip()
+                if not s:
+                    return (15, 23, 42, 255)
+                if not s.startswith("#"):
+                    s = "#" + s
+                try:
+                    if len(s) == 4:  # #rgb
+                        r = int(s[1] * 2, 16)
+                        g = int(s[2] * 2, 16)
+                        b = int(s[3] * 2, 16)
+                        return (r, g, b, 255)
+                    if len(s) >= 7:
+                        r = int(s[1:3], 16)
+                        g = int(s[3:5], 16)
+                        b = int(s[5:7], 16)
+                        return (r, g, b, 255)
+                except Exception:
+                    pass
+                return (15, 23, 42, 255)
+
+            def _draw_text(draw2: Any, x: float, y: float, text: str, fs: int, fill: tuple[int, int, int, int], line_h: float, letter_s: float) -> None:
+                fnt = font(fs)
+                lines = text.split("\n")
+                cy = float(y)
+                for line in lines:
+                    cx = float(x)
+                    if letter_s and fnt is not None:
+                        for ch in line:
+                            draw2.text((cx, cy), ch, fill=fill, font=fnt)
+                            try:
+                                w = fnt.getlength(ch)  # type: ignore
+                            except Exception:
+                                try:
+                                    w = draw2.textlength(ch, font=fnt)
+                                except Exception:
+                                    w = fs * 0.62
+                            cx += float(w) + float(letter_s)
+                    else:
+                        draw2.text((cx, cy), line, fill=fill, font=fnt)
+                    cy += float(fs) * float(line_h)
+
             placements = dict(self._project.data.get("placements") or {})
             values = dict(self._project.data.get("values") or {})
             for k, p in placements.items():
@@ -333,7 +404,10 @@ class Api:
                 x = float(p.get("x") or 0)
                 y = float(p.get("y") or 0)
                 fs = int(p.get("font_size") or 14)
-                draw.text((x, y), text, fill=(10, 10, 10, 255), font=font(fs))
+                color = _hex_to_rgba(str(p.get("color") or "#0f172a"))
+                line_h = float(p.get("line_height") or 1.2)
+                letter_s = float(p.get("letter_spacing") or 0)
+                _draw_text(draw, x, y, text, fs, color, line_h, letter_s)
         except Exception:
             pass
 
@@ -499,9 +573,18 @@ class Api:
             tags.append(t)
         data["tags"] = tags
         placements = dict(data.get("placements") or {})
-        placements[t] = {"page": int(page or 0), "x": float(x), "y": float(y), "font_size": int(font_size or 14)}
+        placements[t] = {
+            "page": int(page or 0),
+            "x": float(x),
+            "y": float(y),
+            "font_size": int(font_size or 14),
+            "color": "#0f172a",
+            "line_height": 1.2,
+            "letter_spacing": 0,
+        }
         data["placements"] = placements
         _write_json(self._project.path, data)
+        self._invalidate_pages({int(page or 0)})
         return {"ok": True, "tag": t}
 
     def set_element_pos(self, tag: str, x: float, y: float) -> dict[str, Any]:
@@ -510,12 +593,16 @@ class Api:
         t = str(tag or "").strip()
         placements = dict(self._project.data.get("placements") or {})
         if t not in placements:
-            placements[t] = {"page": 0, "x": float(x), "y": float(y), "font_size": 14}
+            placements[t] = {"page": 0, "x": float(x), "y": float(y), "font_size": 14, "color": "#0f172a", "line_height": 1.2, "letter_spacing": 0}
         else:
             placements[t]["x"] = float(x)
             placements[t]["y"] = float(y)
         self._project.data["placements"] = placements
         _write_json(self._project.path, self._project.data)
+        try:
+            self._invalidate_pages({int(placements[t].get("page") or 0)})
+        except Exception:
+            self._invalidate_pages(None)
         return {"ok": True}
 
     def get_element_info(self, tag: str) -> dict[str, Any]:
@@ -545,6 +632,89 @@ class Api:
         values[t] = str(value or "")
         self._project.data["values"] = values
         _write_json(self._project.path, self._project.data)
+        try:
+            pl = (self._project.data.get("placements") or {}).get(t) or {}
+            self._invalidate_pages({int(pl.get("page") or 0)})
+        except Exception:
+            self._invalidate_pages(None)
+        return {"ok": True}
+
+    def update_placement(self, tag: str, patch: dict[str, Any]) -> dict[str, Any]:
+        """Update style/position fields for a placement."""
+        if not self._project:
+            return {"ok": False, "error": "no_project"}
+        t = str(tag or "").strip()
+        if not t:
+            return {"ok": False, "error": "missing_tag"}
+        placements = dict(self._project.data.get("placements") or {})
+        pl = placements.get(t)
+        if not isinstance(pl, dict):
+            return {"ok": False, "error": "not_found"}
+        if not isinstance(patch, dict):
+            return {"ok": False, "error": "invalid_patch"}
+        for k, v in patch.items():
+            if k in ("x", "y"):
+                pl[k] = float(v)
+            elif k in ("page",):
+                pl[k] = int(v)
+            elif k in ("font_size",):
+                pl[k] = int(v)
+            elif k in ("color",):
+                pl[k] = str(v)
+            elif k in ("line_height",):
+                pl[k] = float(v)
+            elif k in ("letter_spacing",):
+                pl[k] = float(v)
+        placements[t] = pl
+        self._project.data["placements"] = placements
+        _write_json(self._project.path, self._project.data)
+        self._invalidate_pages({int(pl.get("page") or 0)})
+        return {"ok": True}
+
+    def delete_tags(self, tags: list[str]) -> dict[str, Any]:
+        """Delete tags and associated values/placements."""
+        if not self._project:
+            return {"ok": False, "error": "no_project"}
+        if not isinstance(tags, list):
+            return {"ok": False, "error": "invalid_args"}
+        tset = {str(t).strip() for t in tags if str(t).strip()}
+        if not tset:
+            return {"ok": True}
+        data = self._project.data
+        old_tags = list(data.get("tags") or [])
+        data["tags"] = [t for t in old_tags if t not in tset]
+        values = dict(data.get("values") or {})
+        placements = dict(data.get("placements") or {})
+        pages: set[int] = set()
+        for t in list(tset):
+            values.pop(t, None)
+            pl = placements.pop(t, None)
+            if isinstance(pl, dict):
+                pages.add(int(pl.get("page") or 0))
+        data["values"] = values
+        data["placements"] = placements
+        _write_json(self._project.path, data)
+        self._invalidate_pages(pages if pages else None)
+        return {"ok": True}
+
+    def set_project_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Replace tags/values/placements in current project (for undo/redo & bulk ops)."""
+        if not self._project:
+            return {"ok": False, "error": "no_project"}
+        if not isinstance(payload, dict):
+            return {"ok": False, "error": "invalid_payload"}
+        data = self._project.data
+        tags = payload.get("tags")
+        values = payload.get("values")
+        placements = payload.get("placements")
+        if isinstance(tags, list):
+            data["tags"] = [str(t) for t in tags if str(t).strip()]
+        if isinstance(values, dict):
+            data["values"] = {str(k): str(v) for k, v in values.items()}
+        if isinstance(placements, dict):
+            data["placements"] = dict(placements)
+        _write_json(self._project.path, data)
+        self._invalidate_pages(None)
         return {"ok": True}
 
     # --- preview / export ---
@@ -623,11 +793,33 @@ class Api:
                     x_px = float(p.get("x") or 0)
                     y_px = float(p.get("y") or 0)
                     fs = int(p.get("font_size") or 14)
+                    color = str(p.get("color") or "#0f172a")
+                    line_h = float(p.get("line_height") or 1.2)
+                    letter_s = float(p.get("letter_spacing") or 0)
                     x_pt = x_px * 72.0 / RENDER_DPI
                     y_pt = (h_px - y_px) * 72.0 / RENDER_DPI
                     c.setFont("Helvetica", fs)
+                    try:
+                        c.setFillColor(HexColor(color))
+                    except Exception:
+                        c.setFillColor(HexColor("#0f172a"))
+
+                    def _draw_line_with_spacing(x0: float, y0: float, s: str) -> None:
+                        if not letter_s:
+                            c.drawString(x0, y0, s)
+                            return
+                        cx = x0
+                        for ch in s:
+                            c.drawString(cx, y0, ch)
+                            try:
+                                w = pdfmetrics.stringWidth(ch, "Helvetica", fs)
+                            except Exception:
+                                w = fs * 0.62
+                            cx += float(w) + float(letter_s) * 72.0 / RENDER_DPI
+
                     for line_idx, line in enumerate(text.splitlines() or [""]):
-                        c.drawString(x_pt, y_pt - (fs + 2) * line_idx, line)
+                        y_line = y_pt - (fs * line_h) * line_idx
+                        _draw_line_with_spacing(x_pt, y_line, line)
                 c.save()
                 packet.seek(0)
                 overlay = PdfReader(packet).pages[0]

@@ -85,6 +85,7 @@ const $ = (sel) => document.querySelector(sel)
         project: demo.projectName,
         tags: demo.tags,
         values: demo.values,
+        placements: demo.placements,
         drop_dir: "demo/exports",
         ui_mode: demo.uiMode,
         page_count: demo.pageCount,
@@ -123,6 +124,31 @@ const $ = (sel) => document.querySelector(sel)
       pl.x = Number(x || 0)
       pl.y = Number(y || 0)
       demo.placements[t] = pl
+      return { ok: true }
+    },
+    async update_placement(tag, patch) {
+      const t = String(tag || "").trim()
+      const pl = demo.placements[t]
+      if (!pl) return { ok: false, error: "not_found" }
+      const p = patch && typeof patch === "object" ? patch : {}
+      Object.assign(pl, p)
+      demo.placements[t] = pl
+      return { ok: true }
+    },
+    async delete_tags(tags) {
+      const arr = Array.isArray(tags) ? tags.map((x) => String(x).trim()).filter(Boolean) : []
+      for (const t of arr) {
+        demo.tags = demo.tags.filter((k) => k !== t)
+        delete demo.values[t]
+        delete demo.placements[t]
+      }
+      return { ok: true }
+    },
+    async set_project_payload(payload) {
+      const p = payload && typeof payload === "object" ? payload : {}
+      demo.tags = Array.isArray(p.tags) ? p.tags.map(String) : demo.tags
+      demo.values = p.values && typeof p.values === "object" ? { ...p.values } : demo.values
+      demo.placements = p.placements && typeof p.placements === "object" ? { ...p.placements } : demo.placements
       return { ok: true }
     },
     async get_element_info(tag) {
@@ -174,6 +200,11 @@ const state = {
   tags: [],
   idx: 0,
   values: {},
+  placements: {},
+  selectKeys: [],
+  clipboard: null,
+  undoStack: [],
+  redoStack: [],
   working: false,
   inPrivate: false,
   timerStart: null,
@@ -220,6 +251,55 @@ function saveLocal(key, val) {
   try {
     localStorage.setItem(key, JSON.stringify(val))
   } catch {}
+}
+
+function deepClone(obj) {
+  return JSON.parse(JSON.stringify(obj))
+}
+
+function snapshotProject() {
+  return {
+    tags: [...state.tags],
+    values: deepClone(state.values || {}),
+    placements: deepClone(state.placements || {}),
+  }
+}
+
+async function applyProjectSnapshot(snap, { save = true } = {}) {
+  state.tags = Array.isArray(snap?.tags) ? [...snap.tags] : []
+  state.values = snap?.values && typeof snap.values === "object" ? deepClone(snap.values) : {}
+  state.placements = snap?.placements && typeof snap.placements === "object" ? deepClone(snap.placements) : {}
+  state.idx = Math.max(0, Math.min(state.idx, state.tags.length - 1))
+  state.selectKeys = state.selectKeys.filter((t) => state.tags.includes(t))
+  if (save && window.pywebview?.api?.set_project_payload) {
+    await window.pywebview.api.set_project_payload({ tags: state.tags, values: state.values, placements: state.placements })
+    await window.pywebview.api.save_current_project?.()
+  }
+  render()
+}
+
+function pushUndo(beforeSnap) {
+  state.undoStack.push(beforeSnap)
+  if (state.undoStack.length > 60) state.undoStack.shift()
+  state.redoStack = []
+}
+
+function isTextEditingTarget(el) {
+  const t = (el?.tagName || "").toLowerCase()
+  if (t === "textarea") return true
+  if (t === "input") return true
+  if (el?.isContentEditable) return true
+  return false
+}
+
+function uniqueTag(base) {
+  const clean = String(base || "").trim() || "tag"
+  if (!state.tags.includes(clean)) return clean
+  for (let i = 2; i < 9999; i++) {
+    const t = `${clean}_${i}`
+    if (!state.tags.includes(t)) return t
+  }
+  return `${clean}_${Date.now()}`
 }
 
 function toast(msg) {
@@ -572,6 +652,134 @@ function render() {
 }
 
 function bind() {
+  // Global hotkeys (selection / undo / copy-paste)
+  document.onkeydown = async (ev) => {
+    if (!state.projectPath) return
+    if (isTextEditingTarget(ev.target)) return
+    const k = ev.key
+    const ctrl = ev.ctrlKey || ev.metaKey
+
+    // Undo / Redo
+    if (ctrl && (k === "z" || k === "Z")) {
+      ev.preventDefault()
+      if (ev.shiftKey) {
+        const next = state.redoStack.pop()
+        if (!next) return
+        state.undoStack.push(snapshotProject())
+        await applyProjectSnapshot(next)
+        showPage(state.previewPageIndex || 0)
+        return
+      }
+      const prev = state.undoStack.pop()
+      if (!prev) return
+      state.redoStack.push(snapshotProject())
+      await applyProjectSnapshot(prev)
+      showPage(state.previewPageIndex || 0)
+      return
+    }
+    if (ctrl && (k === "y" || k === "Y")) {
+      ev.preventDefault()
+      const next = state.redoStack.pop()
+      if (!next) return
+      state.undoStack.push(snapshotProject())
+      await applyProjectSnapshot(next)
+      showPage(state.previewPageIndex || 0)
+      return
+    }
+
+    // Copy / Paste
+    if (ctrl && (k === "c" || k === "C")) {
+      if (!state.selectKeys.length) return
+      ev.preventDefault()
+      const tags = [...state.selectKeys]
+      const clip = {
+        tags,
+        values: {},
+        placements: {},
+      }
+      for (const t of tags) {
+        clip.values[t] = state.values?.[t] || ""
+        clip.placements[t] = state.placements?.[t] || null
+      }
+      state.clipboard = clip
+      toast(`コピー: ${tags.length}件`)
+      return
+    }
+    if (ctrl && (k === "v" || k === "V")) {
+      if (!state.clipboard?.tags?.length) return
+      ev.preventDefault()
+      const before = snapshotProject()
+      const pasted = []
+      const offset = 18
+      let n = 0
+      for (const src of state.clipboard.tags) {
+        const pl = state.clipboard.placements?.[src]
+        if (!pl) continue
+        const newTag = uniqueTag(src)
+        state.tags.push(newTag)
+        state.values[newTag] = state.clipboard.values?.[src] || ""
+        state.placements[newTag] = { ...pl, x: Number(pl.x || 0) + offset * (n + 1), y: Number(pl.y || 0) + offset * (n + 1) }
+        pasted.push(newTag)
+        n++
+      }
+      if (!pasted.length) return
+      state.selectKeys = pasted
+      pushUndo(before)
+      await window.pywebview.api.set_project_payload?.({ tags: state.tags, values: state.values, placements: state.placements })
+      await window.pywebview.api.save_current_project?.()
+      showPage(state.previewPageIndex || 0)
+      render()
+      toast(`貼り付け: ${pasted.length}件`)
+      return
+    }
+
+    // Delete selected
+    if (k === "Delete" || k === "Backspace") {
+      if (!state.selectKeys.length) return
+      ev.preventDefault()
+      const before = snapshotProject()
+      const del = [...state.selectKeys]
+      state.tags = state.tags.filter((t) => !del.includes(t))
+      for (const t of del) {
+        delete state.values[t]
+        delete state.placements[t]
+      }
+      state.selectKeys = []
+      pushUndo(before)
+      await window.pywebview.api.delete_tags?.(del)
+      await window.pywebview.api.save_current_project?.()
+      showPage(state.previewPageIndex || 0)
+      render()
+      toast(`削除: ${del.length}件`)
+      return
+    }
+
+    // Nudge with arrows
+    if (k === "ArrowLeft" || k === "ArrowRight" || k === "ArrowUp" || k === "ArrowDown") {
+      if (!state.selectKeys.length) return
+      ev.preventDefault()
+      const step = ev.shiftKey ? 10 : 1
+      const dx = k === "ArrowLeft" ? -step : k === "ArrowRight" ? step : 0
+      const dy = k === "ArrowUp" ? -step : k === "ArrowDown" ? step : 0
+      const before = snapshotProject()
+      const page = Number.isFinite(state.previewPageIndex) ? state.previewPageIndex : 0
+      for (const t of state.selectKeys) {
+        const pl = state.placements?.[t]
+        if (!pl) continue
+        if (Number(pl.page || 0) !== page) continue
+        pl.x = Math.max(0, Number(pl.x || 0) + dx)
+        pl.y = Math.max(0, Number(pl.y || 0) + dy)
+        state.placements[t] = pl
+      }
+      pushUndo(before)
+      await window.pywebview.api.set_project_payload?.({ tags: state.tags, values: state.values, placements: state.placements })
+      await window.pywebview.api.save_current_project?.()
+      drawOverlay()
+      showPage(state.previewPageIndex || 0)
+      return
+    }
+  }
+
   $("#btnOpen").onclick = async () => {
     const r = await window.pywebview.api.pick_project()
     if (!r.ok) return
@@ -588,6 +796,7 @@ function bind() {
     state.projectName = loaded.project
     state.tags = loaded.tags || []
     state.values = loaded.values || {}
+    state.placements = loaded.placements || {}
     state.pageCount = loaded.page_count || 1
     if (!state.tags.length) {
       state.showTagPane = false
@@ -631,6 +840,7 @@ function bind() {
       state.projectName = loaded.project
       state.tags = loaded.tags || []
       state.values = loaded.values || {}
+      state.placements = loaded.placements || {}
       state.pageCount = loaded.page_count || 1
       if (!state.tags.length) {
         state.showTagPane = false
@@ -667,6 +877,7 @@ function bind() {
       state.projectName = loaded.project
       state.tags = loaded.tags || []
       state.values = loaded.values || {}
+      state.placements = loaded.placements || {}
       state.pageCount = loaded.page_count || 1
       if (!state.tags.length) {
         state.showTagPane = false
@@ -955,33 +1166,164 @@ function bind() {
   // 追加モード：クリックで配置
   const ov = $("#overlay")
   if (ov) {
+    const toPageXY = (ev) => {
+      const img = $("#previewImg")
+      if (!img || !img.src) return null
+      const imgRect = img.getBoundingClientRect()
+      const x0 = ev.clientX - imgRect.left
+      const y0 = ev.clientY - imgRect.top
+      if (x0 < 0 || y0 < 0 || x0 > imgRect.width || y0 > imgRect.height) return null
+      const x = (x0 / imgRect.width) * state.pageW
+      const y = (y0 / imgRect.height) * state.pageH
+      return { x, y, imgRect }
+    }
+
+    const hitTest = (pt) => {
+      const page = Number.isFinite(state.previewPageIndex) ? state.previewPageIndex : 0
+      const keys = Object.keys(state.placements || {})
+      // last keys = topmost (rough)
+      for (let i = keys.length - 1; i >= 0; i--) {
+        const t = keys[i]
+        const pl = state.placements?.[t]
+        if (!pl) continue
+        if (Number(pl.page || 0) !== page) continue
+        const fs = Number(pl.font_size || 14) || 14
+        const v = String((state.values?.[t] || "")).replaceAll("<br>", "\n")
+        const lines = v ? v.split("\n") : [t]
+        const longest = Math.max(...lines.map((s) => s.length), 1)
+        const lh = Number(pl.line_height || 1.2) || 1.2
+        const ls = Number(pl.letter_spacing || 0) || 0
+        const wPage = Math.max(42, longest * (fs * 0.62 + ls))
+        const hPage = Math.max(22, lines.length * fs * lh)
+        const x1 = Number(pl.x || 0)
+        const y1 = Number(pl.y || 0)
+        if (pt.x >= x1 - 6 && pt.y >= y1 - 6 && pt.x <= x1 + wPage + 6 && pt.y <= y1 + hPage + 6) {
+          return t
+        }
+      }
+      return null
+    }
+
+    let dragging = false
+    let dragStart = null
+    let dragBase = null
+    let dragUndo = null
+    let clickTag = null
+    let moved = false
+
     // PDFをダブルクリック -> 配置パレット（作業者でも使える）
     ov.ondblclick = (ev) => {
       if (!state.projectPath) return
       // design mode のダブルクリックは既存の処理に任せる
       if (state.designMode) return
-      const img = $("#previewImg")
-      if (!img || !img.src) return
-      const imgRect = img.getBoundingClientRect()
-      const x0 = ev.clientX - imgRect.left
-      const y0 = ev.clientY - imgRect.top
-      if (x0 < 0 || y0 < 0 || x0 > imgRect.width || y0 > imgRect.height) return
-      const x = (x0 / imgRect.width) * state.pageW
-      const y = (y0 / imgRect.height) * state.pageH
+      const p = toPageXY(ev)
+      if (!p) return
       ev.preventDefault()
-      openPlacePalette({ x, y })
+      openPlacePalette({ x: p.x, y: p.y }, null)
+    }
+
+    ov.onpointerdown = (ev) => {
+      if (!state.projectPath) return
+      if (state.designMode) return
+      if (state.addMode) return
+      // ignore if starting on modal etc
+      const p = toPageXY(ev)
+      if (!p) return
+      const t = hitTest(p)
+      clickTag = t
+      moved = false
+      if (t) {
+        if (ev.shiftKey) {
+          if (state.selectKeys.includes(t)) state.selectKeys = state.selectKeys.filter((k) => k !== t)
+          else state.selectKeys = [...state.selectKeys, t]
+        } else {
+          state.selectKeys = [t]
+        }
+        dragUndo = snapshotProject()
+        dragging = true
+        dragStart = { x: p.x, y: p.y }
+        dragBase = {}
+        for (const k of state.selectKeys) {
+          const pl = state.placements?.[k]
+          if (!pl) continue
+          dragBase[k] = { x: Number(pl.x || 0), y: Number(pl.y || 0), page: Number(pl.page || 0), font_size: Number(pl.font_size || 14), color: pl.color, line_height: pl.line_height, letter_spacing: pl.letter_spacing }
+        }
+        ev.preventDefault()
+        try {
+          ov.setPointerCapture?.(ev.pointerId)
+        } catch {}
+        drawOverlay()
+      } else {
+        if (!ev.shiftKey) {
+          state.selectKeys = []
+          drawOverlay()
+        }
+      }
+    }
+
+    ov.onpointermove = (ev) => {
+      if (!dragging || !dragStart || !dragBase) return
+      const p = toPageXY(ev)
+      if (!p) return
+      const dx = p.x - dragStart.x
+      const dy = p.y - dragStart.y
+      if (Math.abs(dx) + Math.abs(dy) > 1) moved = true
+      for (const k of state.selectKeys) {
+        const base = dragBase[k]
+        if (!base) continue
+        const pl = state.placements[k] || {}
+        pl.x = Math.max(0, base.x + dx)
+        pl.y = Math.max(0, base.y + dy)
+        state.placements[k] = pl
+      }
+      drawOverlay()
+    }
+
+    ov.onpointerup = async () => {
+      if (!dragging) {
+        clickTag = null
+        return
+      }
+      dragging = false
+      // click (no move) -> open palette for selected
+      if (clickTag && !moved) {
+        const pl = state.placements?.[clickTag]
+        if (pl) {
+          openPlacePalette({ x: Number(pl.x || 0), y: Number(pl.y || 0) }, clickTag)
+        }
+        clickTag = null
+        return
+      }
+      clickTag = null
+      // commit drag
+      if (dragUndo) {
+        pushUndo(dragUndo)
+      }
+      dragUndo = null
+      dragStart = null
+      dragBase = null
+      try {
+        if (window.pywebview?.api?.set_project_payload) {
+          await window.pywebview.api.set_project_payload({ tags: state.tags, values: state.values, placements: state.placements })
+          await window.pywebview.api.save_current_project?.()
+        } else {
+          // fallback
+          for (const k of state.selectKeys) {
+            const pl = state.placements?.[k]
+            if (pl) await window.pywebview.api.set_element_pos?.(k, pl.x, pl.y)
+          }
+        }
+      } catch {}
+      // refresh preview for current page
+      showPage(state.previewPageIndex || 0)
     }
 
     ov.onclick = async (ev) => {
       if (!state.addMode) return
-      const img = $("#previewImg")
-      if (!img || !img.src) return
-      const imgRect = img.getBoundingClientRect()
-      const x0 = ev.clientX - imgRect.left
-      const y0 = ev.clientY - imgRect.top
-      if (x0 < 0 || y0 < 0 || x0 > imgRect.width || y0 > imgRect.height) return
-      const x = (x0 / imgRect.width) * state.pageW
-      const y = (y0 / imgRect.height) * state.pageH
+      const p = toPageXY(ev)
+      if (!p) return
+      const x = p.x
+      const y = p.y
       toast("欄を追加中…")
       const r = await window.pywebview.api.add_text_field(state.addDraftName, state.previewPageIndex || 0, x, y, 14)
       if (!r.ok) {
@@ -992,6 +1334,7 @@ function bind() {
       }
       const tag = r.tag
       state.values[tag] = ""
+      state.placements[tag] = { page: state.previewPageIndex || 0, x, y, font_size: 14, color: "#0f172a", line_height: 1.2, letter_spacing: 0 }
       if (!state.tags.includes(tag)) state.tags.push(tag)
       state.idx = state.tags.indexOf(tag)
       await window.pywebview.api.save_current_project()
@@ -1399,7 +1742,7 @@ async function openDesignModal() {
   await focusDesignKey()
 }
 
-function openPlacePalette(pt) {
+function openPlacePalette(pt, editTag = null) {
   const modal = $("#modal")
   if (!modal) return
   const close = () => {
@@ -1407,16 +1750,21 @@ function openPlacePalette(pt) {
     modal.innerHTML = ""
   }
   const pageIdx = Number.isFinite(state.previewPageIndex) ? state.previewPageIndex : 0
+  const isEdit = !!editTag
+  const currentPl = isEdit ? (state.placements?.[editTag] || {}) : {}
+  const curColor = String(currentPl.color || "#0f172a")
+  const curLH = Number(currentPl.line_height || 1.2) || 1.2
+  const curLS = Number(currentPl.letter_spacing || 0) || 0
   const tagsOptions = state.tags.map((t) => `<option value="${escapeHtml(t)}"></option>`).join("")
   modal.style.display = "block"
   modal.innerHTML = `
     <div class="modal__backdrop" id="modalClose"></div>
     <div class="modal__card" style="max-width:520px">
-      <div class="modal__title">PDFに配置（ダブルクリック）</div>
-      <div class="label">タグを選ぶ or 新規作成し、値とサイズを指定して配置します。</div>
+      <div class="modal__title">${isEdit ? "要素を編集" : "PDFに配置（ダブルクリック）"}</div>
+      <div class="label">${isEdit ? "選択中の要素の値・見た目を調整します。" : "タグを選ぶ or 新規作成し、値とサイズを指定して配置します。"}</div>
       <div class="field" style="margin-top:8px">
         <div class="label">タグ（既存 or 新規）</div>
-        <input class="input" list="paletteTags" id="pTag" placeholder="例）氏名 / 住所" />
+        <input class="input" list="paletteTags" id="pTag" placeholder="例）氏名 / 住所" ${isEdit ? "disabled" : ""} />
         <datalist id="paletteTags">${tagsOptions}</datalist>
       </div>
       <div class="field">
@@ -1426,11 +1774,25 @@ function openPlacePalette(pt) {
       <div class="row">
         <div class="field" style="width:120px">
           <div class="label">サイズ</div>
-          <input class="input" id="pSize" inputmode="numeric" value="14" />
+          <input class="input" id="pSize" inputmode="numeric" value="${Number(currentPl.font_size || 14) || 14}" />
+        </div>
+        <div class="field" style="width:120px">
+          <div class="label">色</div>
+          <input class="input" id="pColor" value="${escapeHtml(curColor)}" placeholder="#0f172a" />
         </div>
         <div class="field" style="width:120px">
           <div class="label">ページ</div>
           <input class="input" id="pPage" inputmode="numeric" value="${pageIdx + 1}" />
+        </div>
+      </div>
+      <div class="row">
+        <div class="field" style="width:120px">
+          <div class="label">行間</div>
+          <input class="input" id="pLineH" inputmode="decimal" value="${curLH}" />
+        </div>
+        <div class="field" style="width:120px">
+          <div class="label">字間</div>
+          <input class="input" id="pLetterS" inputmode="decimal" value="${curLS}" />
         </div>
         <div class="field" style="flex:1">
           <div class="label">座標 (x,y)</div>
@@ -1438,8 +1800,9 @@ function openPlacePalette(pt) {
         </div>
       </div>
       <div class="row" style="margin-top:10px; justify-content:flex-end">
+        ${isEdit ? `<button class="btn btn--danger" id="pDelete">削除</button>` : ""}
         <button class="btn" id="pCancel">キャンセル</button>
-        <button class="btn btn--primary" id="pSave">配置</button>
+        <button class="btn btn--primary" id="pSave">${isEdit ? "更新" : "配置"}</button>
       </div>
     </div>
   `
@@ -1448,15 +1811,28 @@ function openPlacePalette(pt) {
   const tagInput = $("#pTag")
   const valInput = $("#pVal")
   const sizeInput = $("#pSize")
+  const colorInput = $("#pColor")
+  const lineHInput = $("#pLineH")
+  const letterSInput = $("#pLetterS")
   const pageInput = $("#pPage")
   if (tagInput) tagInput.focus()
+  if (isEdit) {
+    try {
+      tagInput.value = String(editTag)
+      valInput.value = String((state.values?.[editTag] || "")).replaceAll("<br>", "\n")
+      pageInput.value = String((Number(currentPl.page || pageIdx) || 0) + 1)
+    } catch {}
+  }
 
   const save = async () => {
-    const tag = (tagInput?.value || "").trim()
+    const tag = isEdit ? String(editTag) : (tagInput?.value || "").trim()
     if (!tag) return alert("タグを入れてください")
     const raw = (valInput?.value || "").replaceAll("\r\n", "\n")
     const val = raw.replaceAll("\n", "<br>")
     const fontSize = Number(sizeInput?.value || "14") || 14
+    const color = String(colorInput?.value || "#0f172a").trim() || "#0f172a"
+    const lineH = Number(lineHInput?.value || "1.2") || 1.2
+    const letterS = Number(letterSInput?.value || "0") || 0
     const page = Math.max(0, (Number(pageInput?.value || "1") || 1) - 1)
     try {
       let tagId = tag
@@ -1466,8 +1842,14 @@ function openPlacePalette(pt) {
         if (!r.ok) return alert(`追加に失敗: ${r.error || "unknown"}`)
         tagId = r.tag || tag
         if (!state.tags.includes(tagId)) state.tags.push(tagId)
+        state.placements[tagId] = { page, x: pt.x, y: pt.y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS }
       } else {
-        await window.pywebview.api.set_element_pos(tag, pt.x, pt.y)
+        state.placements[tagId] = { ...(state.placements[tagId] || {}), page, x: pt.x, y: pt.y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS }
+        if (window.pywebview?.api?.update_placement) {
+          await window.pywebview.api.update_placement(tagId, { page, x: pt.x, y: pt.y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS })
+        } else {
+          await window.pywebview.api.set_element_pos(tagId, pt.x, pt.y)
+        }
       }
       state.values[tagId] = val
       await window.pywebview.api.set_value(tagId, val)
@@ -1482,6 +1864,23 @@ function openPlacePalette(pt) {
     }
   }
   $("#pSave").onclick = save
+  const del = $("#pDelete")
+  if (del) del.onclick = async () => {
+    const ok = confirm("この要素を削除しますか？（Undoで戻せます）")
+    if (!ok) return
+    const before = snapshotProject()
+    const t = String(editTag)
+    state.tags = state.tags.filter((k) => k !== t)
+    delete state.values[t]
+    delete state.placements[t]
+    state.selectKeys = state.selectKeys.filter((k) => k !== t)
+    pushUndo(before)
+    await window.pywebview.api.delete_tags?.([t])
+    await window.pywebview.api.save_current_project?.()
+    showPage(state.previewPageIndex || 0)
+    render()
+    close()
+  }
   valInput?.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter" && ev.metaKey) {
       ev.preventDefault()
@@ -1515,7 +1914,8 @@ function drawOverlay() {
   ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0)
   ctx.clearRect(0, 0, rect.width, rect.height)
 
-  if ((!state.designMode && !state.addMode) || !img || !img.src) return
+  const hasSelection = (state.selectKeys || []).length > 0
+  if ((!state.designMode && !state.addMode && !hasSelection) || !img || !img.src) return
 
   // 画像が表示されている矩形（centered/letterbox を想定）
   const imgRect = img.getBoundingClientRect()
@@ -1549,6 +1949,39 @@ function drawOverlay() {
     ctx.fillText(msg, x + 9, y + 17)
     ctx.restore()
     return
+  }
+
+  // 選択中要素の枠（作業者向け）
+  if (hasSelection) {
+    const page = Number.isFinite(state.previewPageIndex) ? state.previewPageIndex : 0
+    const selected = state.selectKeys.filter((t) => state.placements?.[t] && Number(state.placements[t].page || 0) === page)
+    ctx.save()
+    ctx.setLineDash([])
+    for (const t of selected) {
+      const pl = state.placements[t] || {}
+      const fs = Number(pl.font_size || 14) || 14
+      const v = String((state.values?.[t] || "")).replaceAll("<br>", "\n")
+      const lines = v ? v.split("\n") : [t]
+      const longest = Math.max(...lines.map((s) => s.length), 1)
+      const lh = Number(pl.line_height || 1.2) || 1.2
+      const ls = Number(pl.letter_spacing || 0) || 0
+      const wPage = Math.max(42, longest * (fs * 0.62 + ls))
+      const hPage = Math.max(22, lines.length * fs * lh)
+      const x1 = (Number(pl.x || 0) / state.pageW) * iw + ox
+      const y1 = (Number(pl.y || 0) / state.pageH) * ih + oy
+      const w1 = (wPage / state.pageW) * iw
+      const h1 = (hPage / state.pageH) * ih
+      ctx.strokeStyle = "rgba(255,106,162,.95)"
+      ctx.lineWidth = 2
+      ctx.strokeRect(x1 - 2, y1 - 2, w1 + 4, h1 + 4)
+      ctx.fillStyle = "rgba(255,106,162,.10)"
+      ctx.fillRect(x1 - 2, y1 - 2, w1 + 4, h1 + 4)
+      // ラベル
+      ctx.font = "700 12px system-ui, -apple-system, Segoe UI, sans-serif"
+      ctx.fillStyle = "rgba(15,23,42,.82)"
+      ctx.fillText(t, x1 + 4, y1 - 8)
+    }
+    ctx.restore()
   }
 
   // 座標（stateにキャッシュして“ヌルヌル”動かす）
