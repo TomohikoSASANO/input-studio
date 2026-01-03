@@ -404,9 +404,8 @@ select:focus,.input:focus,.textarea:focus{box-shadow:0 0 0 5px rgba(124,92,255,.
 .modal__backdrop{
   position:absolute;
   inset:0;
-  background: rgba(15,23,42,.25);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
+  /* 背景の資料を見失わないよう、ぼかさず薄く暗くする */
+  background: rgba(15,23,42,.10);
 }
 .modal__card{
   position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);

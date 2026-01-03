@@ -5,6 +5,14 @@ const $ = (sel) => document.querySelector(sel)
 // 画面を動かせるモックAPIを注入する。
 ;(function ensureDemoApi() {
   if (window.pywebview?.api) return
+  // Desktop (pywebview/WebView2) loads UI via file:// and injects pywebview later.
+  // Only enable the mock API for web demo (GitHub Pages).
+  try {
+    const proto = String(window.location?.protocol || "")
+    if (proto !== "http:" && proto !== "https:") return
+  } catch {
+    return
+  }
   window.__INPUTSTUDIO_DEMO__ = true
 
   const demo = {
@@ -375,7 +383,7 @@ async function showPage(pageIndex) {
         toast("プレビュー画像の読み込みに失敗しました（パス/権限/文字コードの可能性）")
       }
       img.style.visibility = "hidden"
-      img.src = r.png
+      img.src = r.png_data || r.png
     }
     // Align coordinate system to actual rendered image (rotation/aspect-safe)
     if (img && img.naturalWidth && img.naturalHeight) {
@@ -1439,7 +1447,14 @@ function bind() {
       const x = p.x
       const y = p.y
       toast("欄を追加中…")
-      const r = await window.pywebview.api.add_text_field(state.addDraftName, state.previewPageIndex || 0, x, y, 14)
+      let r = await window.pywebview.api.add_text_field(state.addDraftName, state.previewPageIndex || 0, x, y, 14)
+      // Recover if backend lost project context (rare, but observed)
+      if (!r.ok && r.error === "no_project" && state.projectPath && window.pywebview.api.load_project) {
+        try {
+          await window.pywebview.api.load_project(state.projectPath)
+          r = await window.pywebview.api.add_text_field(state.addDraftName, state.previewPageIndex || 0, x, y, 14)
+        } catch {}
+      }
       if (!r.ok) {
         state.addMode = false
         enableOverlayPointer(false)
@@ -1519,7 +1534,7 @@ async function queuePreview(key) {
         img.style.visibility = "hidden"
       }
       img.style.visibility = "hidden"
-      img.src = r.png
+      img.src = r.png_data || r.png
     }
     if (img && img.naturalWidth && img.naturalHeight) {
       state.pageW = img.naturalWidth
@@ -1959,7 +1974,13 @@ function openPlacePalette(pt, editTag = null) {
       let tagId = tag
       const exists = state.tags.includes(tag)
       if (!exists) {
-        const r = await window.pywebview.api.add_text_field(tag, page, pt.x, pt.y, fontSize)
+        let r = await window.pywebview.api.add_text_field(tag, page, pt.x, pt.y, fontSize)
+        if (!r.ok && r.error === "no_project" && state.projectPath && window.pywebview.api.load_project) {
+          try {
+            await window.pywebview.api.load_project(state.projectPath)
+            r = await window.pywebview.api.add_text_field(tag, page, pt.x, pt.y, fontSize)
+          } catch {}
+        }
         if (!r.ok) return alert(`追加に失敗: ${r.error || "unknown"}`)
         tagId = r.tag || tag
         if (!state.tags.includes(tagId)) state.tags.push(tagId)
@@ -1973,7 +1994,13 @@ function openPlacePalette(pt, editTag = null) {
         }
       }
       state.values[tagId] = val
-      await window.pywebview.api.set_value(tagId, val)
+      let sv = await window.pywebview.api.set_value(tagId, val)
+      if (sv && sv.ok === false && sv.error === "no_project" && state.projectPath && window.pywebview.api.load_project) {
+        try {
+          await window.pywebview.api.load_project(state.projectPath)
+          await window.pywebview.api.set_value(tagId, val)
+        } catch {}
+      }
       state.designKey = tagId
       state.idx = Math.max(0, state.tags.indexOf(tagId))
       await window.pywebview.api.save_current_project()

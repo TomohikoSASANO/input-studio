@@ -241,6 +241,20 @@ class Api:
             url = f"{url}?t={int(time.time() * 1000)}"
         return url
 
+    def _png_as_data_url(self, file_url: str) -> str | None:
+        """Read a PNG file (given as file:// URL) and return base64 data URL. Used as fallback if WebView blocks file://."""
+        try:
+            from urllib.parse import urlparse
+
+            parsed = urlparse(file_url)
+            if parsed.scheme != "file":
+                return None
+            path = Path(parsed.path)
+            data = path.read_bytes()
+            return "data:image/png;base64," + base64.b64encode(data).decode("ascii")
+        except Exception:
+            return None
+
     def _cache_get(self, page_index: int) -> str | None:
         try:
             if page_index in self._page_cache:
@@ -441,13 +455,27 @@ class Api:
             hit = self._cache_get(idx)
             if hit:
                 w, h = self._page_image_size(idx)
-                return {"ok": True, "png": hit, "page_display_width": w, "page_display_height": h, "page_index": idx}
+                return {
+                    "ok": True,
+                    "png": hit,
+                    "png_data": self._png_as_data_url(hit),
+                    "page_display_width": w,
+                    "page_display_height": h,
+                    "page_index": idx,
+                }
 
             with self._render_lock:
                 hit2 = self._cache_get(idx)
                 if hit2:
                     w, h = self._page_image_size(idx)
-                    return {"ok": True, "png": hit2, "page_display_width": w, "page_display_height": h, "page_index": idx}
+                    return {
+                        "ok": True,
+                        "png": hit2,
+                        "png_data": self._png_as_data_url(hit2),
+                        "page_display_width": w,
+                        "page_display_height": h,
+                        "page_index": idx,
+                    }
                 png, w, h = self._render_page_png_url(idx)
                 self._cache_put(idx, png)
 
@@ -472,6 +500,7 @@ class Api:
             return {
                 "ok": True,
                 "png": png,
+                "png_data": self._png_as_data_url(png),
                 "page_display_width": w,
                 "page_display_height": h,
                 "page_index": idx,
@@ -858,6 +887,8 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
 
 
 
