@@ -853,6 +853,7 @@ function bind() {
     state.privateTotal = 0
     toast("案件を読み込みました")
     render()
+    await queuePreview()
   }
 
   // --- Demo (GitHub Pages): load real PDF in browser, but use the same button ---
@@ -1002,6 +1003,7 @@ function bind() {
       state.privateTotal = 0
       toast("前回の案件を読み込みました")
       render()
+      await queuePreview()
     }
   }
 
