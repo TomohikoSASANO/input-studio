@@ -4,8 +4,17 @@ const $ = (sel) => document.querySelector(sel)
 // GitHub上で「実画面レビュー」を回すため、pywebviewが無い環境では
 // 画面を動かせるモックAPIを注入する。
 ;(function ensureDemoApi() {
-  // pywebview injects window.pywebview early (api may be set later via `pywebviewready`)
-  // If window.pywebview exists at all, assume desktop and DO NOT inject the mock.
+  // Desktop app (pywebview + WebView2) may not have window.pywebview at initial parse.
+  // Detect desktop reliably and NEVER inject the demo mock there.
+  try {
+    // WebView2 exposes window.chrome.webview
+    if (window.chrome && window.chrome.webview) return
+    const host = String(window.location?.hostname || "")
+    if (host === "127.0.0.1" || host === "localhost") return
+  } catch {
+    return
+  }
+  // If pywebview exists at all, assume desktop and DO NOT inject the mock.
   if (window.pywebview) return
   window.__INPUTSTUDIO_DEMO__ = true
 
