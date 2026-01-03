@@ -369,12 +369,22 @@ async function showPage(pageIndex) {
   if (r && r.ok) {
     const img = $("#previewImg")
     if (img) {
-      img.style.visibility = "visible"
-      img.onerror = () => (img.style.visibility = "hidden")
+      img.onload = () => (img.style.visibility = "visible")
+      img.onerror = () => {
+        img.style.visibility = "hidden"
+        toast("プレビュー画像の読み込みに失敗しました（パス/権限/文字コードの可能性）")
+      }
+      img.style.visibility = "hidden"
       img.src = r.png
     }
-    state.pageW = r.page_display_width || state.pageW
-    state.pageH = r.page_display_height || state.pageH
+    // Align coordinate system to actual rendered image (rotation/aspect-safe)
+    if (img && img.naturalWidth && img.naturalHeight) {
+      state.pageW = img.naturalWidth
+      state.pageH = img.naturalHeight
+    } else {
+      state.pageW = r.page_display_width || state.pageW
+      state.pageH = r.page_display_height || state.pageH
+    }
     drawOverlay()
     const p = $("#pageIndicator")
     if (p) p.textContent = `${idx + 1} / ${state.pageCount || 1}`
@@ -520,24 +530,21 @@ function render() {
           <span class="guide__step">1</span>
           <div style="flex:1">初めて：PDFを選んで新規プロジェクトを作成（フォーム検出なし。自分で欄を配置）</div>
           <button class="chip chip--soft" id="btnOpenPdf">PDFから新規</button>
+          ${window.__INPUTSTUDIO_DEMO__ ? `<input type="file" id="demoPdfFile" accept=".pdf,application/pdf" style="display:none" />` : ""}
         </div>
-        ${
-          window.__INPUTSTUDIO_DEMO__
-            ? `<div class="guide__row">
-                <span class="guide__step">1b</span>
-                <div style="flex:1">デモ：このブラウザでPDFを読み込んで表示（Pages用）</div>
-                <button class="chip chip--soft" id="btnDemoLoadPdf">PDFを読み込む</button>
-                <input type="file" id="demoPdfFile" accept=".pdf,application/pdf" style="display:none" />
-              </div>`
-            : ""
-        }
         <div class="guide__row">
           <span class="guide__step">2</span>
           <div style="flex:1">続きから：既存の案件（プロジェクト）を開いて編集/入力を再開</div>
           <button class="chip" id="btnOpen">案件を開く ${tipIcon(1, "PDF付きの案件ファイルを選択して開始します。")} </button>
           ${state.lastSession ? `<button class="chip chip--soft" id="btnResume">続きから</button>` : ""}
         </div>
-        ${state.lastProjectDir ? `<div style="font-size:12px; color:var(--muted)">前回開いたフォルダ: ${escapeHtml(state.lastProjectDir)}</div>` : ""}
+        ${
+          state.lastProjectDir
+            ? `<div class="pathLine" title="${escapeHtml(state.lastProjectDir)}">
+                前回開いたフォルダ: <span class="pathValue">${escapeHtml(state.lastProjectDir)}</span>
+              </div>`
+            : ""
+        }
       </div>
 
       <div class="miniActions">
@@ -848,67 +855,64 @@ function bind() {
     render()
   }
 
-  // --- Demo: load real PDF in browser (GitHub Pages) -----------------------
-  const btnDemoLoadPdf = $("#btnDemoLoadPdf")
+  // --- Demo (GitHub Pages): load real PDF in browser, but use the same button ---
   const demoPdfFile = $("#demoPdfFile")
-  if (btnDemoLoadPdf && demoPdfFile) {
-    btnDemoLoadPdf.onclick = () => demoPdfFile.click()
+  const loadPdfInBrowser = async (file) => {
+    toast("PDFを読み込み中…")
+    const buf = await file.arrayBuffer()
+    // dynamic import pdf.js as ESM from CDN
+    const pdfjs = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/build/pdf.mjs")
+    pdfjs.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/build/pdf.worker.mjs"
+    const doc = await pdfjs.getDocument({ data: buf }).promise
+
+    window.__demoPdfDoc = doc
+    window.__demoPdfCache = new Map()
+
+    const api = window.pywebview.api
+    api.get_preview_png_base64_page = async (page_index) => {
+      const idx = Math.max(0, Math.min(doc.numPages - 1, Number(page_index || 0)))
+      const cache = window.__demoPdfCache
+      if (cache.has(idx)) return cache.get(idx)
+      const page = await doc.getPage(idx + 1)
+      // Match desktop coordinate system (RENDER_DPI=150)
+      const scale = 150 / 72
+      const vp = page.getViewport({ scale })
+      const canvas = document.createElement("canvas")
+      canvas.width = Math.floor(vp.width)
+      canvas.height = Math.floor(vp.height)
+      const ctx = canvas.getContext("2d")
+      await page.render({ canvasContext: ctx, viewport: vp }).promise
+      const blob = await new Promise((res) => canvas.toBlob(res, "image/png"))
+      const url = URL.createObjectURL(blob)
+      const out = { ok: true, png: url, page_display_width: canvas.width, page_display_height: canvas.height, page_index: idx }
+      cache.set(idx, out)
+      return out
+    }
+    api.get_preview_png_base64 = async (tag) => {
+      const t = String(tag || "").trim()
+      const pl = state.placements?.[t]
+      const idx = pl ? Number(pl.page || 0) : 0
+      return api.get_preview_png_base64_page(idx)
+    }
+
+    state.projectPath = "demo:pdf"
+    state.projectName = file.name
+    state.pageCount = doc.numPages
+    state.previewPageIndex = 0
+    state.tags = []
+    state.values = {}
+    state.placements = {}
+    state.showTagPane = false
+    saveLocal("inputstudio-show-tagpane", state.showTagPane)
+    toast(`PDFを読み込みました（${doc.numPages}ページ）`)
+    render()
+  }
+  if (demoPdfFile) {
     demoPdfFile.onchange = async () => {
       const file = demoPdfFile.files?.[0]
       if (!file) return
       try {
-        toast("PDFを読み込み中…")
-        const buf = await file.arrayBuffer()
-        // dynamic import pdf.js as ESM from CDN
-        const pdfjs = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/build/pdf.mjs")
-        pdfjs.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/build/pdf.worker.mjs"
-        const doc = await pdfjs.getDocument({ data: buf }).promise
-
-        // attach to demo api if present
-        window.__demoPdfDoc = doc
-        window.__demoPdfCache = new Map()
-
-        // override preview API to render real PDF pages
-        const api = window.pywebview.api
-        api.get_preview_png_base64_page = async (page_index) => {
-          const idx = Math.max(0, Math.min(doc.numPages - 1, Number(page_index || 0)))
-          const cache = window.__demoPdfCache
-          if (cache.has(idx)) return cache.get(idx)
-          const page = await doc.getPage(idx + 1)
-          // Align demo coordinate system with desktop backend:
-          // backend renders at RENDER_DPI=150 (pt -> px via 72dpi base)
-          const scale = 150 / 72
-          const vp = page.getViewport({ scale })
-          const canvas = document.createElement("canvas")
-          canvas.width = Math.floor(vp.width)
-          canvas.height = Math.floor(vp.height)
-          const ctx = canvas.getContext("2d")
-          await page.render({ canvasContext: ctx, viewport: vp }).promise
-          const blob = await new Promise((res) => canvas.toBlob(res, "image/png"))
-          const url = URL.createObjectURL(blob)
-          const out = { ok: true, png: url, page_display_width: canvas.width, page_display_height: canvas.height, page_index: idx }
-          cache.set(idx, out)
-          return out
-        }
-        api.get_preview_png_base64 = async (tag) => {
-          // keep compatibility
-          const t = String(tag || "").trim()
-          const pl = state.placements?.[t]
-          const idx = pl ? Number(pl.page || 0) : 0
-          return api.get_preview_png_base64_page(idx)
-        }
-
-        state.projectPath = "demo:pdf"
-        state.projectName = file.name
-        state.pageCount = doc.numPages
-        state.previewPageIndex = 0
-        state.tags = []
-        state.values = {}
-        state.placements = {}
-        state.showTagPane = false
-        saveLocal("inputstudio-show-tagpane", state.showTagPane)
-        toast(`PDFを読み込みました（${doc.numPages}ページ）`)
-        render()
+        await loadPdfInBrowser(file)
       } catch (e) {
         alert(`PDF読み込みに失敗しました: ${e}`)
       } finally {
@@ -919,6 +923,10 @@ function bind() {
 
   const btnOpenPdf = $("#btnOpenPdf")
   if (btnOpenPdf) btnOpenPdf.onclick = async () => {
+    if (window.__INPUTSTUDIO_DEMO__ && demoPdfFile) {
+      demoPdfFile.click()
+      return
+    }
     try {
       const api = window.pywebview?.api
       const pick = api?.pick_pdf
@@ -1504,14 +1512,20 @@ async function queuePreview(key) {
   if (r.ok) {
     const img = $("#previewImg")
     if (img) {
-      img.style.visibility = "visible"
+      img.onload = () => (img.style.visibility = "visible")
       img.onerror = () => {
         img.style.visibility = "hidden"
       }
+      img.style.visibility = "hidden"
       img.src = r.png
     }
-    state.pageW = r.page_display_width || state.pageW
-    state.pageH = r.page_display_height || state.pageH
+    if (img && img.naturalWidth && img.naturalHeight) {
+      state.pageW = img.naturalWidth
+      state.pageH = img.naturalHeight
+    } else {
+      state.pageW = r.page_display_width || state.pageW
+      state.pageH = r.page_display_height || state.pageH
+    }
     state.previewPageIndex = Number.isFinite(r.page_index) ? r.page_index : state.previewPageIndex
     const p = $("#pageIndicator")
     if (p) p.textContent = `${(state.previewPageIndex || 0) + 1} / ${state.pageCount || 1}`
