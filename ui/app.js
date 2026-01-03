@@ -4,15 +4,9 @@ const $ = (sel) => document.querySelector(sel)
 // GitHub上で「実画面レビュー」を回すため、pywebviewが無い環境では
 // 画面を動かせるモックAPIを注入する。
 ;(function ensureDemoApi() {
-  if (window.pywebview?.api) return
-  // Desktop (pywebview/WebView2) loads UI via file:// and injects pywebview later.
-  // Only enable the mock API for web demo (GitHub Pages).
-  try {
-    const proto = String(window.location?.protocol || "")
-    if (proto !== "http:" && proto !== "https:") return
-  } catch {
-    return
-  }
+  // pywebview injects window.pywebview early (api may be set later via `pywebviewready`)
+  // If window.pywebview exists at all, assume desktop and DO NOT inject the mock.
+  if (window.pywebview) return
   window.__INPUTSTUDIO_DEMO__ = true
 
   const demo = {
