@@ -373,7 +373,24 @@ class Api:
                     if sz in font_cache:
                         return font_cache[sz]
                     try:
-                        f = ImageFont.truetype("arial.ttf", sz)
+                        # Japanese text needs a JP-capable font; prefer Windows built-ins.
+                        candidates = [
+                            r"C:\Windows\Fonts\meiryo.ttc",
+                            r"C:\Windows\Fonts\YuGothR.ttc",
+                            r"C:\Windows\Fonts\YuGothM.ttc",
+                            r"C:\Windows\Fonts\msgothic.ttc",
+                            r"C:\Windows\Fonts\msmincho.ttc",
+                            "arial.ttf",
+                        ]
+                        f = None
+                        for fp in candidates:
+                            try:
+                                f = ImageFont.truetype(fp, sz)
+                                break
+                            except Exception:
+                                f = None
+                        if f is None:
+                            raise RuntimeError("font_load_failed")
                     except Exception:
                         f = ImageFont.load_default()
                     font_cache[sz] = f
@@ -819,6 +836,21 @@ class Api:
             placements = dict(self._project.data.get("placements") or {})
             values = dict(self._project.data.get("values") or {})
 
+            # Ensure Japanese-capable font for PDF export.
+            # Use built-in CID font so we don't depend on external font files.
+            try:
+                from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+
+                pdfmetrics.registerFont(UnicodeCIDFont("HeiseiKakuGo-W5"))
+                jp_font = "HeiseiKakuGo-W5"
+            except Exception:
+                jp_font = "Helvetica"
+
+            import re
+
+            def _needs_jp(s: str) -> bool:
+                return bool(re.search(r"[\u3040-\u30ff\u3400-\u9fff\u3000-\u303f\uff00-\uffef]", s or ""))
+
             out_dir = self._project.path.parent / "exports"
             out_dir.mkdir(parents=True, exist_ok=True)
             out_pdf = out_dir / f"filled-{int(time.time())}.pdf"
@@ -850,7 +882,8 @@ class Api:
                     letter_s = float(p.get("letter_spacing") or 0)
                     x_pt = x_px * 72.0 / RENDER_DPI
                     y_pt = (h_px - y_px) * 72.0 / RENDER_DPI
-                    c.setFont("Helvetica", fs)
+                    font_name = jp_font if _needs_jp(text) else "Helvetica"
+                    c.setFont(font_name, fs)
                     try:
                         c.setFillColor(HexColor(color))
                     except Exception:
@@ -864,7 +897,7 @@ class Api:
                         for ch in s:
                             c.drawString(cx, y0, ch)
                             try:
-                                w = pdfmetrics.stringWidth(ch, "Helvetica", fs)
+                                w = pdfmetrics.stringWidth(ch, font_name, fs)
                             except Exception:
                                 w = fs * 0.62
                             cx += float(w) + float(letter_s) * 72.0 / RENDER_DPI

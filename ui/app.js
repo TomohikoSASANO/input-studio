@@ -1985,8 +1985,47 @@ function openPlacePalette(pt, editTag = null) {
       </div>
     </div>
   `
-  $("#modalClose").onclick = close
-  $("#pCancel").onclick = close
+  const original = isEdit
+    ? {
+        tag: String(editTag),
+        pl: { ...(state.placements?.[editTag] || {}) },
+        val: String(state.values?.[editTag] || ""),
+      }
+    : null
+  let liveDirty = false
+  let liveTimer = null
+
+  const revertLive = async () => {
+    if (!original) return
+    try {
+      const t = original.tag
+      const pl = original.pl || {}
+      const x = Number(pl.x || 0)
+      const y = Number(pl.y || 0)
+      const page = Number(pl.page || 0)
+      const fontSize = Number(pl.font_size || 14) || 14
+      const color = String(pl.color || "#0f172a")
+      const lineH = Number(pl.line_height || 1.2) || 1.2
+      const letterS = Number(pl.letter_spacing || 0) || 0
+      state.placements[t] = { ...(state.placements?.[t] || {}), page, x, y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS }
+      state.values[t] = String(original.val || "")
+      if (window.pywebview?.api?.update_placement) {
+        await window.pywebview.api.update_placement(t, { page, x, y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS })
+      } else {
+        await window.pywebview.api.set_element_pos?.(t, x, y)
+      }
+      await window.pywebview.api.set_value?.(t, String(original.val || ""))
+      await showPage(page)
+    } catch {}
+  }
+
+  const closeMaybe = async () => {
+    if (isEdit && liveDirty) await revertLive()
+    close()
+  }
+
+  $("#modalClose").onclick = closeMaybe
+  $("#pCancel").onclick = closeMaybe
   const tagInput = $("#pTag")
   const valInput = $("#pVal")
   const sizeInput = $("#pSize")
@@ -2026,7 +2065,10 @@ function openPlacePalette(pt, editTag = null) {
       b.dataset.color = c
       b.style.background = c
       b.onclick = () => {
-        if (colorInput) colorInput.value = c
+        if (colorInput) {
+          colorInput.value = c
+          colorInput.dispatchEvent(new Event("input", { bubbles: true }))
+        }
         applySelected()
       }
       sw.appendChild(b)
@@ -2058,6 +2100,45 @@ function openPlacePalette(pt, editTag = null) {
   bindSpin(sizeInput, $("#pSizeUp"), $("#pSizeDown"), 1, 6, 96, 0)
   bindSpin(lineHInput, $("#pLineHUp"), $("#pLineHDown"), 0.1, 0.6, 3.0, 1)
   bindSpin(letterSInput, $("#pLetterSUp"), $("#pLetterSDown"), 0.5, -5, 30, 1)
+
+  // 編集中は「変更した瞬間にプレビューへ反映」する（微調整が主運用のため）
+  const scheduleLive = () => {
+    if (!isEdit) return
+    liveDirty = true
+    if (liveTimer) clearTimeout(liveTimer)
+    liveTimer = setTimeout(async () => {
+      try {
+        const tagId = String(editTag)
+        const raw = (valInput?.value || "").replaceAll("\r\n", "\n")
+        const val = raw.replaceAll("\n", "<br>")
+        const fontSize = Number(sizeInput?.value || "14") || 14
+        const color = String(colorInput?.value || "#0f172a").trim() || "#0f172a"
+        const lineH = Number(lineHInput?.value || "1.2") || 1.2
+        const letterS = Number(letterSInput?.value || "0") || 0
+        const page = Math.max(0, (Number(pageInput?.value || "1") || 1) - 1)
+        const pl0 = state.placements?.[tagId] || currentPl || {}
+        const x = Number(pl0.x || 0)
+        const y = Number(pl0.y || 0)
+        state.placements[tagId] = { ...(pl0 || {}), page, x, y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS }
+        state.values[tagId] = val
+        if (window.pywebview?.api?.update_placement) {
+          await window.pywebview.api.update_placement(tagId, { page, x, y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS })
+        } else {
+          await window.pywebview.api.set_element_pos?.(tagId, x, y)
+        }
+        await window.pywebview.api.set_value?.(tagId, val)
+        await showPage(page)
+      } catch {}
+    }, 120)
+  }
+  if (isEdit) {
+    sizeInput?.addEventListener("input", scheduleLive)
+    lineHInput?.addEventListener("input", scheduleLive)
+    letterSInput?.addEventListener("input", scheduleLive)
+    pageInput?.addEventListener("input", scheduleLive)
+    colorInput?.addEventListener("input", scheduleLive)
+    valInput?.addEventListener("input", scheduleLive)
+  }
 
   // パレットを“要素に被らず”かつ“PDF表示領域内”に収める
   const positionPalette = () => {
