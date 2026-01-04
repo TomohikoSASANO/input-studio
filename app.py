@@ -193,6 +193,44 @@ class Api:
             data = _read_json(p, None)
             if not isinstance(data, dict):
                 return {"ok": False, "error": "invalid_json"}
+
+            # ---- schema normalization / migration ----
+            # Old schema: placements[tag] = {page,x,y,font_size,...}
+            # New schema: placements[fid] = {tag, page,x,y,font_size,...}
+            changed = False
+            placements0 = data.get("placements")
+            if isinstance(placements0, dict):
+                newp: dict[str, Any] = {}
+                for k, v in placements0.items():
+                    if isinstance(v, dict) and "tag" in v:
+                        # already new-style
+                        newp[str(k)] = v
+                        continue
+                    if isinstance(v, dict):
+                        fid = f"f_{uuid.uuid4().hex[:8]}"
+                        nv = dict(v)
+                        nv["tag"] = str(k)
+                        newp[fid] = nv
+                        changed = True
+                # If we detected any old-style entries, migrate whole dict.
+                if changed:
+                    data["placements"] = newp
+            else:
+                data["placements"] = {}
+
+            # Ensure tags list contains all placement tags (preserve order).
+            tags0 = data.get("tags")
+            tags_list: list[str] = [str(t) for t in tags0] if isinstance(tags0, list) else []
+            tagset = {t for t in tags_list if t.strip()}
+            for _, pl in (data.get("placements") or {}).items():
+                if isinstance(pl, dict):
+                    t = str(pl.get("tag") or "").strip()
+                    if t and t not in tagset:
+                        tags_list.append(t)
+                        tagset.add(t)
+                        changed = True
+            data["tags"] = tags_list
+
             self._project = LoadedProject(path=p, data=data)
             self._last_project_path = str(p)
             self._ui_mode = str(data.get("ui_mode") or "worker")
@@ -220,6 +258,9 @@ class Api:
                 self._page_count = 1
 
             self._page_cache.clear()
+            if changed:
+                # Write back migrated/normalized schema so future loads are consistent.
+                _write_json(self._project.path, self._project.data)
             return {
                 "ok": True,
                 "project": data.get("project") or p.parent.name,
@@ -443,12 +484,15 @@ class Api:
 
             placements = dict(self._project.data.get("placements") or {})
             values = dict(self._project.data.get("values") or {})
-            for k, p in placements.items():
+            for _, p in placements.items():
                 if not isinstance(p, dict):
                     continue
                 if int(p.get("page") or 0) != idx:
                     continue
-                text = str(values.get(k) or "").replace("<br>", "\n")
+                tag = str(p.get("tag") or "").strip()
+                if not tag:
+                    continue
+                text = str(values.get(tag) or "").replace("<br>", "\n")
                 if not text.strip():
                     continue
                 x = float(p.get("x") or 0)
@@ -642,7 +686,9 @@ class Api:
             tags.append(t)
         data["tags"] = tags
         placements = dict(data.get("placements") or {})
-        placements[t] = {
+        fid = f"f_{uuid.uuid4().hex[:8]}"
+        placements[fid] = {
+            "tag": t,
             "page": int(page or 0),
             "x": float(x),
             "y": float(y),
@@ -654,31 +700,33 @@ class Api:
         data["placements"] = placements
         _write_json(self._project.path, data)
         self._invalidate_pages({int(page or 0)})
-        return {"ok": True, "tag": t}
+        return {"ok": True, "fid": fid, "tag": t}
 
-    def set_element_pos(self, tag: str, x: float, y: float) -> dict[str, Any]:
+    def set_element_pos(self, fid: str, x: float, y: float) -> dict[str, Any]:
         if not self._project and not self._ensure_project_loaded():
             return {"ok": False, "error": "no_project"}
-        t = str(tag or "").strip()
+        f = str(fid or "").strip()
+        if not f:
+            return {"ok": False, "error": "missing_id"}
         placements = dict(self._project.data.get("placements") or {})
-        if t not in placements:
-            placements[t] = {"page": 0, "x": float(x), "y": float(y), "font_size": 14, "color": "#0f172a", "line_height": 1.2, "letter_spacing": 0}
+        if f not in placements or not isinstance(placements.get(f), dict):
+            placements[f] = {"tag": "", "page": 0, "x": float(x), "y": float(y), "font_size": 14, "color": "#0f172a", "line_height": 1.2, "letter_spacing": 0}
         else:
-            placements[t]["x"] = float(x)
-            placements[t]["y"] = float(y)
+            placements[f]["x"] = float(x)
+            placements[f]["y"] = float(y)
         self._project.data["placements"] = placements
         _write_json(self._project.path, self._project.data)
         try:
-            self._invalidate_pages({int(placements[t].get("page") or 0)})
+            self._invalidate_pages({int(placements[f].get("page") or 0)})
         except Exception:
             self._invalidate_pages(None)
         return {"ok": True}
 
-    def get_element_info(self, tag: str) -> dict[str, Any]:
+    def get_element_info(self, fid: str) -> dict[str, Any]:
         if not self._project and not self._ensure_project_loaded():
             return {"ok": False, "error": "no_project"}
-        t = str(tag or "").strip()
-        pl = (self._project.data.get("placements") or {}).get(t)
+        f = str(fid or "").strip()
+        pl = (self._project.data.get("placements") or {}).get(f)
         if not isinstance(pl, dict):
             return {"ok": False, "error": "not_found"}
         page = int(pl.get("page") or 0)
@@ -686,6 +734,7 @@ class Api:
         return {
             "ok": True,
             "page": page,
+            "tag": str(pl.get("tag") or ""),
             "x": float(pl.get("x") or 0),
             "y": float(pl.get("y") or 0),
             "font_size": int(pl.get("font_size") or 14),
@@ -701,22 +750,26 @@ class Api:
         values[t] = str(value or "")
         self._project.data["values"] = values
         _write_json(self._project.path, self._project.data)
+        # Invalidate all pages that have placements using this tag.
         try:
-            pl = (self._project.data.get("placements") or {}).get(t) or {}
-            self._invalidate_pages({int(pl.get("page") or 0)})
+            pages: set[int] = set()
+            for _, pl in (self._project.data.get("placements") or {}).items():
+                if isinstance(pl, dict) and str(pl.get("tag") or "").strip() == t:
+                    pages.add(int(pl.get("page") or 0))
+            self._invalidate_pages(pages if pages else None)
         except Exception:
             self._invalidate_pages(None)
         return {"ok": True}
 
-    def update_placement(self, tag: str, patch: dict[str, Any]) -> dict[str, Any]:
+    def update_placement(self, fid: str, patch: dict[str, Any]) -> dict[str, Any]:
         """Update style/position fields for a placement."""
         if not self._project and not self._ensure_project_loaded():
             return {"ok": False, "error": "no_project"}
-        t = str(tag or "").strip()
-        if not t:
-            return {"ok": False, "error": "missing_tag"}
+        f = str(fid or "").strip()
+        if not f:
+            return {"ok": False, "error": "missing_id"}
         placements = dict(self._project.data.get("placements") or {})
-        pl = placements.get(t)
+        pl = placements.get(f)
         if not isinstance(pl, dict):
             return {"ok": False, "error": "not_found"}
         if not isinstance(patch, dict):
@@ -734,10 +787,44 @@ class Api:
                 pl[k] = float(v)
             elif k in ("letter_spacing",):
                 pl[k] = float(v)
-        placements[t] = pl
+            elif k in ("tag",):
+                pl[k] = str(v)
+        placements[f] = pl
         self._project.data["placements"] = placements
         _write_json(self._project.path, self._project.data)
         self._invalidate_pages({int(pl.get("page") or 0)})
+        return {"ok": True}
+
+    def delete_elements(self, fids: list[str]) -> dict[str, Any]:
+        """Delete specific elements (placements). Does not delete tag values unless unused."""
+        if not self._project and not self._ensure_project_loaded():
+            return {"ok": False, "error": "no_project"}
+        if not isinstance(fids, list):
+            return {"ok": False, "error": "invalid_args"}
+        data = self._project.data
+        placements = dict(data.get("placements") or {})
+        pages: set[int] = set()
+        removed_tags: list[str] = []
+        for fid in [str(x).strip() for x in fids if str(x).strip()]:
+            pl = placements.pop(fid, None)
+            if isinstance(pl, dict):
+                pages.add(int(pl.get("page") or 0))
+                removed_tags.append(str(pl.get("tag") or "").strip())
+        data["placements"] = placements
+
+        # Remove tags that are no longer used by any placement.
+        still_used = {str(pl.get("tag") or "").strip() for pl in placements.values() if isinstance(pl, dict)}
+        tags0 = [str(t).strip() for t in (data.get("tags") or []) if str(t).strip()]
+        if removed_tags:
+            data["tags"] = [t for t in tags0 if t in still_used]
+            values = dict(data.get("values") or {})
+            for t in list(values.keys()):
+                if str(t).strip() and str(t).strip() not in still_used:
+                    values.pop(t, None)
+            data["values"] = values
+
+        _write_json(self._project.path, data)
+        self._invalidate_pages(pages if pages else None)
         return {"ok": True}
 
     def delete_tags(self, tags: list[str]) -> dict[str, Any]:
@@ -757,9 +844,11 @@ class Api:
         pages: set[int] = set()
         for t in list(tset):
             values.pop(t, None)
-            pl = placements.pop(t, None)
-            if isinstance(pl, dict):
+        # Remove all placements that use these tags.
+        for fid, pl in list(placements.items()):
+            if isinstance(pl, dict) and str(pl.get("tag") or "").strip() in tset:
                 pages.add(int(pl.get("page") or 0))
+                placements.pop(fid, None)
         data["values"] = values
         data["placements"] = placements
         _write_json(self._project.path, data)
@@ -820,10 +909,17 @@ class Api:
     def get_preview_png_base64(self, tag: str) -> dict[str, Any]:
         if not self._project and not self._ensure_project_loaded():
             return {"ok": False, "error": "no_project"}
-        t = str(tag or "").strip()
+        q = str(tag or "").strip()
         placements = dict(self._project.data.get("placements") or {})
-        pl = placements.get(t)
-        page_index = int(pl.get("page") if isinstance(pl, dict) else 0) if placements else 0
+        page_index = 0
+        # Accept fid (new) or tag (legacy).
+        if q in placements and isinstance(placements.get(q), dict):
+            page_index = int(placements[q].get("page") or 0)
+        else:
+            for _, pl in placements.items():
+                if isinstance(pl, dict) and str(pl.get("tag") or "").strip() == q:
+                    page_index = int(pl.get("page") or 0)
+                    break
         # Route to page renderer so cache/prefetch & PyMuPDF path applies.
         return self.get_preview_png_base64_page(page_index)
 
@@ -866,12 +962,15 @@ class Api:
 
                 packet = io.BytesIO()
                 c = canvas.Canvas(packet, pagesize=(w_pt, h_pt))
-                for k, p in placements.items():
+                for _, p in placements.items():
                     if not isinstance(p, dict):
                         continue
                     if int(p.get("page") or 0) != pi:
                         continue
-                    text = str(values.get(k) or "").replace("<br>", "\n")
+                    tag = str(p.get("tag") or "").strip()
+                    if not tag:
+                        continue
+                    text = str(values.get(tag) or "").replace("<br>", "\n")
                     if not text.strip():
                         continue
                     x_px = float(p.get("x") or 0)

@@ -304,7 +304,7 @@ async function applyProjectSnapshot(snap, { save = true } = {}) {
   state.values = snap?.values && typeof snap.values === "object" ? deepClone(snap.values) : {}
   state.placements = snap?.placements && typeof snap.placements === "object" ? deepClone(snap.placements) : {}
   state.idx = Math.max(0, Math.min(state.idx, state.tags.length - 1))
-  state.selectKeys = state.selectKeys.filter((t) => state.tags.includes(t))
+  state.selectKeys = state.selectKeys.filter((fid) => state.placements?.[fid])
   if (save && window.pywebview?.api?.set_project_payload) {
     await window.pywebview.api.set_project_payload({ tags: state.tags, values: state.values, placements: state.placements })
     await window.pywebview.api.save_current_project?.()
@@ -750,39 +750,35 @@ function bind() {
       return
     }
 
-    // Copy / Paste
+    // Copy / Paste (copies elements; values stay tag-synced)
     if (ctrl && (k === "c" || k === "C")) {
       if (!state.selectKeys.length) return
       ev.preventDefault()
-      const tags = [...state.selectKeys]
-      const clip = {
-        tags,
-        values: {},
-        placements: {},
-      }
-      for (const t of tags) {
-        clip.values[t] = state.values?.[t] || ""
-        clip.placements[t] = state.placements?.[t] || null
+      const fids = state.selectKeys.filter((fid) => state.placements?.[fid])
+      const clip = { fids, placements: {} }
+      for (const fid of fids) {
+        clip.placements[fid] = { ...(state.placements?.[fid] || {}) }
       }
       state.clipboard = clip
-      toast(`コピー: ${tags.length}件`)
+      toast(`コピー: ${fids.length}件`)
       return
     }
     if (ctrl && (k === "v" || k === "V")) {
-      if (!state.clipboard?.tags?.length) return
+      if (!state.clipboard?.fids?.length) return
       ev.preventDefault()
       const before = snapshotProject()
       const pasted = []
       const offset = 18
       let n = 0
-      for (const src of state.clipboard.tags) {
+      const makeFid = () => `f_${Date.now().toString(16)}_${Math.random().toString(16).slice(2, 8)}`
+      for (const src of state.clipboard.fids) {
         const pl = state.clipboard.placements?.[src]
         if (!pl) continue
-        const newTag = uniqueTag(src)
-        state.tags.push(newTag)
-        state.values[newTag] = state.clipboard.values?.[src] || ""
-        state.placements[newTag] = { ...pl, x: Number(pl.x || 0) + offset * (n + 1), y: Number(pl.y || 0) + offset * (n + 1) }
-        pasted.push(newTag)
+        const newFid = makeFid()
+        const tag = String(pl.tag || "").trim()
+        if (tag && !state.tags.includes(tag)) state.tags.push(tag)
+        state.placements[newFid] = { ...pl, x: Number(pl.x || 0) + offset * (n + 1), y: Number(pl.y || 0) + offset * (n + 1) }
+        pasted.push(newFid)
         n++
       }
       if (!pasted.length) return
@@ -802,14 +798,14 @@ function bind() {
       ev.preventDefault()
       const before = snapshotProject()
       const del = [...state.selectKeys]
-      state.tags = state.tags.filter((t) => !del.includes(t))
-      for (const t of del) {
-        delete state.values[t]
-        delete state.placements[t]
-      }
+      for (const fid of del) delete state.placements[fid]
       state.selectKeys = []
       pushUndo(before)
-      await window.pywebview.api.delete_tags?.(del)
+      if (window.pywebview?.api?.delete_elements) await window.pywebview.api.delete_elements(del)
+      else {
+        // fallback: try to persist full payload
+        await window.pywebview.api.set_project_payload?.({ tags: state.tags, values: state.values, placements: state.placements })
+      }
       await window.pywebview.api.save_current_project?.()
       showPage(state.previewPageIndex || 0)
       render()
@@ -826,13 +822,13 @@ function bind() {
       const dy = k === "ArrowUp" ? -step : k === "ArrowDown" ? step : 0
       const before = snapshotProject()
       const page = Number.isFinite(state.previewPageIndex) ? state.previewPageIndex : 0
-      for (const t of state.selectKeys) {
-        const pl = state.placements?.[t]
+      for (const fid of state.selectKeys) {
+        const pl = state.placements?.[fid]
         if (!pl) continue
         if (Number(pl.page || 0) !== page) continue
         pl.x = Math.max(0, Number(pl.x || 0) + dx)
         pl.y = Math.max(0, Number(pl.y || 0) + dy)
-        state.placements[t] = pl
+        state.placements[fid] = pl
       }
       pushUndo(before)
       await window.pywebview.api.set_project_payload?.({ tags: state.tags, values: state.values, placements: state.placements })
@@ -1036,7 +1032,8 @@ function bind() {
   if (btnDesign) btnDesign.onclick = async () => {
     if (!state.projectPath) return toast("先に案件を開いてください")
     state.designMode = true
-    state.designKey = state.designKey || (state.tags[0] || null)
+    // design mode operates on element id (fid)
+    state.designKey = state.designKey || (Object.keys(state.placements || {})[0] || null)
     await openDesignModal()
   }
 
@@ -1320,13 +1317,14 @@ function bind() {
       const keys = Object.keys(state.placements || {})
       // last keys = topmost (rough)
       for (let i = keys.length - 1; i >= 0; i--) {
-        const t = keys[i]
-        const pl = state.placements?.[t]
+        const fid = keys[i]
+        const pl = state.placements?.[fid]
         if (!pl) continue
         if (Number(pl.page || 0) !== page) continue
         const fs = Number(pl.font_size || 14) || 14
-        const v = String((state.values?.[t] || "")).replaceAll("<br>", "\n")
-        const lines = v ? v.split("\n") : [t]
+        const tag = String(pl.tag || "").trim()
+        const v = String((state.values?.[tag] || "")).replaceAll("<br>", "\n")
+        const lines = v ? v.split("\n") : [tag || fid]
         const longest = Math.max(...lines.map((s) => s.length), 1)
         const lh = Number(pl.line_height || 1.2) || 1.2
         const ls = Number(pl.letter_spacing || 0) || 0
@@ -1335,7 +1333,7 @@ function bind() {
         const x1 = Number(pl.x || 0)
         const y1 = Number(pl.y || 0)
         if (pt.x >= x1 - 6 && pt.y >= y1 - 6 && pt.x <= x1 + wPage + 6 && pt.y <= y1 + hPage + 6) {
-          return t
+          return fid
         }
       }
       return null
@@ -1476,10 +1474,12 @@ function bind() {
         drawOverlay()
         return alert(`追加に失敗: ${r.error || "unknown"}`)
       }
+      const fid = r.fid
       const tag = r.tag
-      state.values[tag] = ""
-      state.placements[tag] = { page: state.previewPageIndex || 0, x, y, font_size: 14, color: "#0f172a", line_height: 1.2, letter_spacing: 0 }
       if (!state.tags.includes(tag)) state.tags.push(tag)
+      if (state.values[tag] == null) state.values[tag] = ""
+      state.placements[fid] = { tag, page: state.previewPageIndex || 0, x, y, font_size: 14, color: "#0f172a", line_height: 1.2, letter_spacing: 0 }
+      state.selectKeys = [fid]
       state.idx = state.tags.indexOf(tag)
       await window.pywebview.api.save_current_project()
       state.addMode = false
@@ -1703,6 +1703,17 @@ function burstConfetti() {
 async function openDesignModal() {
   const modal = $("#modal")
   modal.style.display = "block"
+  const allItems = Object.entries(state.placements || {})
+    .map(([fid, pl]) => {
+      const p = pl && typeof pl === "object" ? pl : {}
+      const tag = String(p.tag || "").trim() || "(タグ未設定)"
+      const page = Number(p.page || 0) + 1
+      return { fid: String(fid), tag, page, label: `${tag}（p${page}）` }
+    })
+    .filter((x) => x.fid)
+  if (!state.designKey || !state.placements?.[state.designKey]) {
+    state.designKey = allItems[0]?.fid || null
+  }
   modal.innerHTML = `
     <div class="modal__backdrop" id="modalClose"></div>
     <div class="modal__card">
@@ -1727,9 +1738,9 @@ async function openDesignModal() {
 
       <div class="row" style="margin-top:10px">
         <div class="field" style="flex:1">
-          <div class="label">対象タグ</div>
+          <div class="label">対象要素</div>
           <select id="dKey">
-            ${state.tags.map((k) => `<option value="${k}" ${k === state.designKey ? "selected" : ""}>${escapeHtml(k)}</option>`).join("")}
+            ${allItems.map((it) => `<option value="${escapeHtml(it.fid)}" ${it.fid === state.designKey ? "selected" : ""}>${escapeHtml(it.label)}</option>`).join("")}
           </select>
         </div>
         <button class="btn btn--soft" id="dPrev">前</button>
@@ -1768,14 +1779,16 @@ async function openDesignModal() {
     await focusDesignKey()
   }
   $("#dPrev").onclick = async () => {
-    const i = Math.max(0, state.tags.indexOf(state.designKey) - 1)
-    state.designKey = state.tags[i] || state.designKey
+    const ids = allItems.map((x) => x.fid)
+    const i = Math.max(0, ids.indexOf(state.designKey) - 1)
+    state.designKey = ids[i] || state.designKey
     $("#dKey").value = state.designKey
     await focusDesignKey()
   }
   $("#dNext").onclick = async () => {
-    const i = Math.min(state.tags.length - 1, state.tags.indexOf(state.designKey) + 1)
-    state.designKey = state.tags[i] || state.designKey
+    const ids = allItems.map((x) => x.fid)
+    const i = Math.min(ids.length - 1, ids.indexOf(state.designKey) + 1)
+    state.designKey = ids[i] || state.designKey
     $("#dKey").value = state.designKey
     await focusDesignKey()
   }
@@ -1817,9 +1830,9 @@ async function openDesignModal() {
     const q = ($("#dSearch")?.value || "").trim().toLowerCase()
     const sel = $("#dKey")
     if (!sel) return
-    sel.innerHTML = state.tags
-      .filter((k) => (q ? k.toLowerCase().includes(q) : true))
-      .map((k) => `<option value="${k}" ${k === state.designKey ? "selected" : ""}>${escapeHtml(k)}</option>`)
+    const filtered = allItems.filter((it) => (q ? it.label.toLowerCase().includes(q) : true))
+    sel.innerHTML = filtered
+      .map((it) => `<option value="${escapeHtml(it.fid)}" ${it.fid === state.designKey ? "selected" : ""}>${escapeHtml(it.label)}</option>`)
       .join("")
   }
   $("#dSearch").addEventListener("input", () => {
@@ -1900,7 +1913,7 @@ async function openDesignModal() {
   await focusDesignKey()
 }
 
-function openPlacePalette(pt, editTag = null) {
+function openPlacePalette(pt, editFid = null) {
   const modal = $("#modal")
   if (!modal) return
   const close = () => {
@@ -1908,8 +1921,8 @@ function openPlacePalette(pt, editTag = null) {
     modal.innerHTML = ""
   }
   const pageIdx = Number.isFinite(state.previewPageIndex) ? state.previewPageIndex : 0
-  const isEdit = !!editTag
-  const currentPl = isEdit ? (state.placements?.[editTag] || {}) : {}
+  const isEdit = !!editFid
+  const currentPl = isEdit ? (state.placements?.[editFid] || {}) : {}
   const curColor = String(currentPl.color || "#0f172a")
   const curLH = Number(currentPl.line_height || 1.2) || 1.2
   const curLS = Number(currentPl.letter_spacing || 0) || 0
@@ -1984,12 +1997,22 @@ function openPlacePalette(pt, editTag = null) {
         <button class="btn btn--primary" id="pSave">${isEdit ? "更新" : "配置"}</button>
       </div>
     </div>
+    <div class="modal__card modal__card--anchored" id="tagCard" style="max-width:520px; width:520px">
+      <div class="modal__title">タグ一覧（同期）</div>
+      <div class="label">同じタグの値は、このプロジェクト内の全ページ・全要素で同期します。</div>
+      <div class="field" style="margin-top:8px">
+        <div class="label">検索</div>
+        <input class="input" id="tagSearch" placeholder="例）氏名 / 住所 / 金額 …" />
+      </div>
+      <div class="badge badge--soft" style="margin-top:8px">クリックで「配置タグ」にセット / 値は即反映</div>
+      <div class="tagPane" id="tagQuickPane" style="margin-top:10px; max-height: calc(100vh - 220px)"></div>
+    </div>
   `
   const original = isEdit
     ? {
-        tag: String(editTag),
-        pl: { ...(state.placements?.[editTag] || {}) },
-        val: String(state.values?.[editTag] || ""),
+        fid: String(editFid),
+        pl: { ...(state.placements?.[editFid] || {}) },
+        val: String(state.values?.[String((state.placements?.[editFid] || {}).tag || "")] || ""),
       }
     : null
   let liveDirty = false
@@ -1998,23 +2021,24 @@ function openPlacePalette(pt, editTag = null) {
   const revertLive = async () => {
     if (!original) return
     try {
-      const t = original.tag
+      const fid = original.fid
       const pl = original.pl || {}
       const x = Number(pl.x || 0)
       const y = Number(pl.y || 0)
       const page = Number(pl.page || 0)
+      const tag = String(pl.tag || "").trim()
       const fontSize = Number(pl.font_size || 14) || 14
       const color = String(pl.color || "#0f172a")
       const lineH = Number(pl.line_height || 1.2) || 1.2
       const letterS = Number(pl.letter_spacing || 0) || 0
-      state.placements[t] = { ...(state.placements?.[t] || {}), page, x, y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS }
-      state.values[t] = String(original.val || "")
+      state.placements[fid] = { ...(state.placements?.[fid] || {}), tag, page, x, y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS }
+      if (tag) state.values[tag] = String(original.val || "")
       if (window.pywebview?.api?.update_placement) {
-        await window.pywebview.api.update_placement(t, { page, x, y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS })
+        await window.pywebview.api.update_placement(fid, { tag, page, x, y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS })
       } else {
-        await window.pywebview.api.set_element_pos?.(t, x, y)
+        await window.pywebview.api.set_element_pos?.(fid, x, y)
       }
-      await window.pywebview.api.set_value?.(t, String(original.val || ""))
+      if (tag) await window.pywebview.api.set_value?.(tag, String(original.val || ""))
       await showPage(page)
     } catch {}
   }
@@ -2034,6 +2058,9 @@ function openPlacePalette(pt, editTag = null) {
   const letterSInput = $("#pLetterS")
   const pageInput = $("#pPage")
   const card = $("#paletteCard")
+  const tagCard = $("#tagCard")
+  const tagQuickPane = $("#tagQuickPane")
+  const tagSearch = $("#tagSearch")
 
   // 色パレット（選択式）
   const sw = $("#pSwatches")
@@ -2108,7 +2135,7 @@ function openPlacePalette(pt, editTag = null) {
     if (liveTimer) clearTimeout(liveTimer)
     liveTimer = setTimeout(async () => {
       try {
-        const tagId = String(editTag)
+        const fid = String(editFid)
         const raw = (valInput?.value || "").replaceAll("\r\n", "\n")
         const val = raw.replaceAll("\n", "<br>")
         const fontSize = Number(sizeInput?.value || "14") || 14
@@ -2116,17 +2143,18 @@ function openPlacePalette(pt, editTag = null) {
         const lineH = Number(lineHInput?.value || "1.2") || 1.2
         const letterS = Number(letterSInput?.value || "0") || 0
         const page = Math.max(0, (Number(pageInput?.value || "1") || 1) - 1)
-        const pl0 = state.placements?.[tagId] || currentPl || {}
+        const pl0 = state.placements?.[fid] || currentPl || {}
+        const tag = String(tagInput?.value || pl0.tag || "").trim()
         const x = Number(pl0.x || 0)
         const y = Number(pl0.y || 0)
-        state.placements[tagId] = { ...(pl0 || {}), page, x, y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS }
-        state.values[tagId] = val
+        state.placements[fid] = { ...(pl0 || {}), tag, page, x, y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS }
+        if (tag) state.values[tag] = val
         if (window.pywebview?.api?.update_placement) {
-          await window.pywebview.api.update_placement(tagId, { page, x, y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS })
+          await window.pywebview.api.update_placement(fid, { tag, page, x, y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS })
         } else {
-          await window.pywebview.api.set_element_pos?.(tagId, x, y)
+          await window.pywebview.api.set_element_pos?.(fid, x, y)
         }
-        await window.pywebview.api.set_value?.(tagId, val)
+        if (tag) await window.pywebview.api.set_value?.(tag, val)
         await showPage(page)
       } catch {}
     }, 120)
@@ -2160,11 +2188,11 @@ function openPlacePalette(pt, editTag = null) {
     let ay = content.top + (pt.y / state.pageH) * content.height
     let aw = 1
     let ah = 1
-    if (isEdit && editTag) {
-      const pl = state.placements?.[editTag] || {}
+    if (isEdit && editFid) {
+      const pl = state.placements?.[editFid] || {}
       const fs = Number(pl.font_size || 14) || 14
-      const v = String((state.values?.[editTag] || "")).replaceAll("<br>", "\n")
-      const lines = v ? v.split("\n") : [String(editTag)]
+      const v = String((state.values?.[String(pl.tag || "")] || "")).replaceAll("<br>", "\n")
+      const lines = v ? v.split("\n") : [String(pl.tag || "")]
       const longest = Math.max(...lines.map((s) => s.length), 1)
       const lh = Number(pl.line_height || 1.2) || 1.2
       const ls = Number(pl.letter_spacing || 0) || 0
@@ -2223,6 +2251,40 @@ function openPlacePalette(pt, editTag = null) {
 
     card.style.left = `${Math.round(pos.l)}px`
     card.style.top = `${Math.round(pos.t)}px`
+
+    // Place tagCard near paletteCard within stage (same size feeling)
+    if (tagCard) {
+      const r1 = card.getBoundingClientRect()
+      const w2 = tagCard.getBoundingClientRect().width || 520
+      const h2 = tagCard.getBoundingClientRect().height || 420
+      const fit = (l, t) =>
+        l >= stage.left + pad &&
+        t >= stage.top + pad &&
+        l + w2 <= stage.right - pad &&
+        t + h2 <= stage.bottom - pad
+      const clamp = (l, t) => {
+        const ll = Math.min(Math.max(l, stage.left + pad), stage.right - pad - w2)
+        const tt = Math.min(Math.max(t, stage.top + pad), stage.bottom - pad - h2)
+        return { l: ll, t: tt }
+      }
+      const cands = [
+        { l: r1.right + margin, t: r1.top },
+        { l: r1.left - w2 - margin, t: r1.top },
+        { l: r1.left, t: r1.bottom + margin },
+        { l: r1.left, t: r1.top - h2 - margin },
+      ]
+      let p2 = null
+      for (const c of cands) {
+        if (fit(c.l, c.t)) {
+          p2 = c
+          break
+        }
+      }
+      if (!p2) p2 = clamp(r1.right + margin, r1.top)
+      else p2 = clamp(p2.l, p2.t)
+      tagCard.style.left = `${Math.round(p2.l)}px`
+      tagCard.style.top = `${Math.round(p2.t)}px`
+    }
   }
   requestAnimationFrame(() => {
     positionPalette()
@@ -2232,14 +2294,79 @@ function openPlacePalette(pt, editTag = null) {
   if (tagInput) tagInput.focus()
   if (isEdit) {
     try {
-      tagInput.value = String(editTag)
-      valInput.value = String((state.values?.[editTag] || "")).replaceAll("<br>", "\n")
+      tagInput.value = String((currentPl.tag || "")).trim()
+      valInput.value = String((state.values?.[String(currentPl.tag || "")] || "")).replaceAll("<br>", "\n")
       pageInput.value = String((Number(currentPl.page || pageIdx) || 0) + 1)
     } catch {}
   }
 
+  // ---- Tag quick palette (edit values / select tag to place) ----
+  const renderTagQuick = () => {
+    if (!tagQuickPane) return
+    const q = String(tagSearch?.value || "").trim().toLowerCase()
+    const tags = (state.tags || []).filter((t) => (q ? String(t).toLowerCase().includes(q) : true))
+    const currentTag = String(tagInput?.value || "").trim()
+    tagQuickPane.innerHTML = `
+      <div class="badge">タグ一覧</div>
+      <div class="badge badge--soft">${tags.length} 件</div>
+      <div class="list" id="tagQuickList"></div>
+    `
+    const list = $("#tagQuickList")
+    if (!list) return
+    tags.forEach((t, i) => {
+      const row = document.createElement("div")
+      row.className = "row"
+      row.style.alignItems = "center"
+      row.style.gap = "10px"
+      const v = String((state.values?.[t] || "")).replaceAll("<br>", "\n")
+      row.innerHTML = `
+        <div class="minw120" style="min-width:120px; font-weight:800; cursor:pointer">${escapeHtml(t)}</div>
+        <input class="input" data-tag="${escapeHtml(t)}" placeholder="値…" value="${escapeHtml(v)}">
+      `
+      const name = row.querySelector("div")
+      const inp = row.querySelector("input")
+      if (name) {
+        name.onclick = () => {
+          if (tagInput) tagInput.value = t
+          if (valInput) valInput.value = String((state.values?.[t] || "")).replaceAll("<br>", "\n")
+          // visually hint selection
+          try {
+            const chips = tagQuickPane.querySelectorAll("[data-tag]")
+            chips.forEach((el) => el.classList.remove("is-selected"))
+          } catch {}
+        }
+      }
+      if (inp) {
+        if (t === currentTag) inp.style.boxShadow = "0 0 0 5px rgba(124,92,255,.12)"
+        let timer = null
+        inp.addEventListener("input", () => {
+          const raw = String(inp.value || "").replaceAll("\r\n", "\n")
+          const val = raw.replaceAll("\n", "<br>")
+          state.values[t] = val
+          if (timer) clearTimeout(timer)
+          timer = setTimeout(async () => {
+            try {
+              await window.pywebview.api.set_value(t, val)
+              await showPage(state.previewPageIndex || 0)
+            } catch {}
+          }, 120)
+        })
+        inp.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter" && !ev.shiftKey) {
+            ev.preventDefault()
+            const next = list.querySelectorAll("input")[i + 1]
+            if (next) next.focus()
+          }
+        })
+      }
+      list.appendChild(row)
+    })
+  }
+  if (tagSearch) tagSearch.addEventListener("input", renderTagQuick)
+  renderTagQuick()
+
   const save = async () => {
-    const tag = isEdit ? String(editTag) : (tagInput?.value || "").trim()
+    const tag = (tagInput?.value || "").trim()
     if (!tag) return alert("タグを入れてください")
     const raw = (valInput?.value || "").replaceAll("\r\n", "\n")
     const val = raw.replaceAll("\n", "<br>")
@@ -2249,9 +2376,12 @@ function openPlacePalette(pt, editTag = null) {
     const letterS = Number(letterSInput?.value || "0") || 0
     const page = Math.max(0, (Number(pageInput?.value || "1") || 1) - 1)
     try {
-      let tagId = tag
-      const exists = state.tags.includes(tag)
-      if (!exists) {
+      // Ensure tag exists in list (for tag pane)
+      if (!state.tags.includes(tag)) state.tags.push(tag)
+
+      let fid = isEdit ? String(editFid) : null
+      if (!isEdit) {
+        // Always create a new element (same tag can be placed multiple times).
         let r = await window.pywebview.api.add_text_field(tag, page, pt.x, pt.y, fontSize)
         if (!r.ok && r.error === "no_project" && state.projectPath && window.pywebview.api.load_project) {
           try {
@@ -2260,29 +2390,31 @@ function openPlacePalette(pt, editTag = null) {
           } catch {}
         }
         if (!r.ok) return alert(`追加に失敗: ${r.error || "unknown"}`)
-        tagId = r.tag || tag
-        if (!state.tags.includes(tagId)) state.tags.push(tagId)
-        state.placements[tagId] = { page, x: pt.x, y: pt.y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS }
+        fid = r.fid
+        state.placements[fid] = { tag, page, x: pt.x, y: pt.y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS }
       } else {
-        state.placements[tagId] = { ...(state.placements[tagId] || {}), page, x: pt.x, y: pt.y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS }
+        // Update existing element
+        if (!fid) return alert("要素IDが不明です")
+        state.placements[fid] = { ...(state.placements[fid] || {}), tag, page, x: pt.x, y: pt.y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS }
         if (window.pywebview?.api?.update_placement) {
-          await window.pywebview.api.update_placement(tagId, { page, x: pt.x, y: pt.y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS })
+          await window.pywebview.api.update_placement(fid, { tag, page, x: pt.x, y: pt.y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS })
         } else {
-          await window.pywebview.api.set_element_pos(tagId, pt.x, pt.y)
+          await window.pywebview.api.set_element_pos(fid, pt.x, pt.y)
         }
       }
-      state.values[tagId] = val
-      let sv = await window.pywebview.api.set_value(tagId, val)
+
+      state.values[tag] = val
+      let sv = await window.pywebview.api.set_value(tag, val)
       if (sv && sv.ok === false && sv.error === "no_project" && state.projectPath && window.pywebview.api.load_project) {
         try {
           await window.pywebview.api.load_project(state.projectPath)
-          await window.pywebview.api.set_value(tagId, val)
+          await window.pywebview.api.set_value(tag, val)
         } catch {}
       }
-      state.designKey = tagId
-      state.idx = Math.max(0, state.tags.indexOf(tagId))
+      state.selectKeys = fid ? [fid] : []
+      state.idx = Math.max(0, state.tags.indexOf(tag))
       await window.pywebview.api.save_current_project()
-      await queuePreview(tagId)
+      await showPage(page)
       render()
       close()
     } catch (e) {
@@ -2295,13 +2427,12 @@ function openPlacePalette(pt, editTag = null) {
     const ok = confirm("この要素を削除しますか？（Undoで戻せます）")
     if (!ok) return
     const before = snapshotProject()
-    const t = String(editTag)
-    state.tags = state.tags.filter((k) => k !== t)
-    delete state.values[t]
-    delete state.placements[t]
-    state.selectKeys = state.selectKeys.filter((k) => k !== t)
+    const fid = String(editFid)
+    delete state.placements[fid]
+    state.selectKeys = state.selectKeys.filter((k) => k !== fid)
     pushUndo(before)
-    await window.pywebview.api.delete_tags?.([t])
+    if (window.pywebview?.api?.delete_elements) await window.pywebview.api.delete_elements?.([fid])
+    else await window.pywebview.api.set_project_payload?.({ tags: state.tags, values: state.values, placements: state.placements })
     await window.pywebview.api.save_current_project?.()
     showPage(state.previewPageIndex || 0)
     render()
@@ -2386,8 +2517,9 @@ function drawOverlay() {
     for (const t of selected) {
       const pl = state.placements[t] || {}
       const fs = Number(pl.font_size || 14) || 14
-      const v = String((state.values?.[t] || "")).replaceAll("<br>", "\n")
-      const lines = v ? v.split("\n") : [t]
+        const tag = String(pl.tag || "").trim()
+        const v = String((state.values?.[tag] || "")).replaceAll("<br>", "\n")
+        const lines = v ? v.split("\n") : [tag || t]
       const longest = Math.max(...lines.map((s) => s.length), 1)
       const lh = Number(pl.line_height || 1.2) || 1.2
       const ls = Number(pl.letter_spacing || 0) || 0
@@ -2405,7 +2537,7 @@ function drawOverlay() {
       // ラベル
       ctx.font = "700 12px system-ui, -apple-system, Segoe UI, sans-serif"
       ctx.fillStyle = "rgba(15,23,42,.82)"
-      ctx.fillText(t, x1 + 4, y1 - 8)
+      ctx.fillText(String((state.placements?.[t]?.tag || t) || t), x1 + 4, y1 - 8)
     }
     ctx.restore()
   }
