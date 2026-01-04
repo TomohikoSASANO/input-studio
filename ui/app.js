@@ -1917,7 +1917,7 @@ function openPlacePalette(pt, editTag = null) {
   modal.style.display = "block"
   modal.innerHTML = `
     <div class="modal__backdrop" id="modalClose"></div>
-    <div class="modal__card" style="max-width:520px">
+    <div class="modal__card modal__card--anchored" id="paletteCard" style="max-width:520px">
       <div class="modal__title">${isEdit ? "要素を編集" : "PDFに配置（ダブルクリック）"}</div>
       <div class="label">${isEdit ? "選択中の要素の値・見た目を調整します。" : "タグを選ぶ or 新規作成し、値とサイズを指定して配置します。"}</div>
       <div class="field" style="margin-top:8px">
@@ -1930,13 +1930,22 @@ function openPlacePalette(pt, editTag = null) {
         <textarea class="textarea" id="pVal" rows="3" placeholder="ここに値を入力（Enterで改行）"></textarea>
       </div>
       <div class="row">
-        <div class="field" style="width:120px">
+        <div class="field" style="width:160px">
           <div class="label">サイズ</div>
-          <input class="input" id="pSize" inputmode="numeric" value="${Number(currentPl.font_size || 14) || 14}" />
+          <div class="spin">
+            <input class="input" id="pSize" inputmode="numeric" value="${Number(currentPl.font_size || 14) || 14}" />
+            <div class="spin__btns">
+              <button class="spin__btn" id="pSizeUp" type="button">▲</button>
+              <button class="spin__btn" id="pSizeDown" type="button">▼</button>
+            </div>
+          </div>
         </div>
-        <div class="field" style="width:120px">
+        <div class="field" style="width:180px">
           <div class="label">色</div>
-          <input class="input" id="pColor" value="${escapeHtml(curColor)}" placeholder="#0f172a" />
+          <div class="colorPicker">
+            <div class="swatches" id="pSwatches"></div>
+            <input class="input" id="pColor" value="${escapeHtml(curColor)}" readonly />
+          </div>
         </div>
         <div class="field" style="width:120px">
           <div class="label">ページ</div>
@@ -1944,13 +1953,25 @@ function openPlacePalette(pt, editTag = null) {
         </div>
       </div>
       <div class="row">
-        <div class="field" style="width:120px">
+        <div class="field" style="width:160px">
           <div class="label">行間</div>
-          <input class="input" id="pLineH" inputmode="decimal" value="${curLH}" />
+          <div class="spin">
+            <input class="input" id="pLineH" inputmode="decimal" value="${curLH}" />
+            <div class="spin__btns">
+              <button class="spin__btn" id="pLineHUp" type="button">▲</button>
+              <button class="spin__btn" id="pLineHDown" type="button">▼</button>
+            </div>
+          </div>
         </div>
-        <div class="field" style="width:120px">
+        <div class="field" style="width:160px">
           <div class="label">字間</div>
-          <input class="input" id="pLetterS" inputmode="decimal" value="${curLS}" />
+          <div class="spin">
+            <input class="input" id="pLetterS" inputmode="decimal" value="${curLS}" />
+            <div class="spin__btns">
+              <button class="spin__btn" id="pLetterSUp" type="button">▲</button>
+              <button class="spin__btn" id="pLetterSDown" type="button">▼</button>
+            </div>
+          </div>
         </div>
         <div class="field" style="flex:1">
           <div class="label">座標 (x,y)</div>
@@ -1973,6 +1994,160 @@ function openPlacePalette(pt, editTag = null) {
   const lineHInput = $("#pLineH")
   const letterSInput = $("#pLetterS")
   const pageInput = $("#pPage")
+  const card = $("#paletteCard")
+
+  // 色パレット（選択式）
+  const sw = $("#pSwatches")
+  if (sw) {
+    const colors = [
+      "#0f172a",
+      "#141726",
+      "#64748b",
+      "#7c5cff",
+      "#5ad7ff",
+      "#ff6aa2",
+      "#ff4d6d",
+      "#22c55e",
+      "#ffd36a",
+      "#7cffb2",
+    ]
+    const norm = (s) => String(s || "").trim().toLowerCase()
+    const applySelected = () => {
+      const cur = norm(colorInput?.value)
+      for (const el of sw.querySelectorAll(".swatch")) {
+        el.classList.toggle("is-selected", norm(el.dataset.color) === cur)
+      }
+    }
+    sw.innerHTML = ""
+    colors.forEach((c) => {
+      const b = document.createElement("button")
+      b.type = "button"
+      b.className = "swatch"
+      b.dataset.color = c
+      b.style.background = c
+      b.onclick = () => {
+        if (colorInput) colorInput.value = c
+        applySelected()
+      }
+      sw.appendChild(b)
+    })
+    applySelected()
+  }
+
+  // 上下ボタンで微調整（現場では“数字→感覚”が作れないのでボタン中心に）
+  const bindSpin = (inputEl, upEl, downEl, step, minV = null, maxV = null, digits = null) => {
+    if (!inputEl) return
+    const toNum = () => {
+      const v = Number(String(inputEl.value || "").trim())
+      return Number.isFinite(v) ? v : 0
+    }
+    const setNum = (v) => {
+      let x = v
+      if (typeof minV === "number") x = Math.max(minV, x)
+      if (typeof maxV === "number") x = Math.min(maxV, x)
+      if (typeof digits === "number") x = Number(x.toFixed(digits))
+      inputEl.value = String(x)
+    }
+    const bump = (dir) => {
+      setNum(toNum() + dir * step)
+      inputEl.dispatchEvent(new Event("input", { bubbles: true }))
+    }
+    if (upEl) upEl.onclick = () => bump(+1)
+    if (downEl) downEl.onclick = () => bump(-1)
+  }
+  bindSpin(sizeInput, $("#pSizeUp"), $("#pSizeDown"), 1, 6, 96, 0)
+  bindSpin(lineHInput, $("#pLineHUp"), $("#pLineHDown"), 0.1, 0.6, 3.0, 1)
+  bindSpin(letterSInput, $("#pLetterSUp"), $("#pLetterSDown"), 0.5, -5, 30, 1)
+
+  // パレットを“要素に被らず”かつ“PDF表示領域内”に収める
+  const positionPalette = () => {
+    if (!card) return
+    const img = $("#previewImg")
+    if (!img || !img.parentElement) return
+    const stage = img.parentElement.getBoundingClientRect() // PDF表示枠（白余白含む）
+    const content = getRenderedContentRect(img, state.pageW, state.pageH) // 実PDF領域
+    const pad = 10
+    const margin = 12
+
+    // 最大高さを枠に合わせる（はみ出し防止）
+    const maxH = Math.max(240, Math.floor(stage.height - pad * 2))
+    card.style.maxHeight = `${maxH}px`
+    card.style.overflow = "auto"
+
+    // anchor rect（編集時は要素サイズを推定、配置時はクリック点）
+    let ax = content.left + (pt.x / state.pageW) * content.width
+    let ay = content.top + (pt.y / state.pageH) * content.height
+    let aw = 1
+    let ah = 1
+    if (isEdit && editTag) {
+      const pl = state.placements?.[editTag] || {}
+      const fs = Number(pl.font_size || 14) || 14
+      const v = String((state.values?.[editTag] || "")).replaceAll("<br>", "\n")
+      const lines = v ? v.split("\n") : [String(editTag)]
+      const longest = Math.max(...lines.map((s) => s.length), 1)
+      const lh = Number(pl.line_height || 1.2) || 1.2
+      const ls = Number(pl.letter_spacing || 0) || 0
+      const wPage = Math.max(42, longest * (fs * 0.62 + ls))
+      const hPage = Math.max(22, lines.length * fs * lh)
+      ax = content.left + (Number(pl.x || pt.x) / state.pageW) * content.width
+      ay = content.top + (Number(pl.y || pt.y) / state.pageH) * content.height
+      aw = (wPage / state.pageW) * content.width
+      ah = (hPage / state.pageH) * content.height
+    }
+
+    const rect = () => card.getBoundingClientRect()
+    const cw = rect().width
+    const ch = rect().height
+    const el = { left: ax, top: ay, width: aw, height: ah }
+
+    const fit = (l, t) =>
+      l >= stage.left + pad &&
+      t >= stage.top + pad &&
+      l + cw <= stage.right - pad &&
+      t + ch <= stage.bottom - pad
+
+    const clamp = (l, t) => {
+      const ll = Math.min(Math.max(l, stage.left + pad), stage.right - pad - cw)
+      const tt = Math.min(Math.max(t, stage.top + pad), stage.bottom - pad - ch)
+      return { l: ll, t: tt }
+    }
+
+    const candidates = [
+      { l: el.left + el.width + margin, t: el.top }, // 右
+      { l: el.left - cw - margin, t: el.top }, // 左
+      { l: el.left, t: el.top + el.height + margin }, // 下
+      { l: el.left, t: el.top - ch - margin }, // 上
+    ]
+
+    let pos = null
+    for (const c of candidates) {
+      if (fit(c.l, c.t)) {
+        pos = c
+        break
+      }
+    }
+    if (!pos) pos = clamp(el.left + el.width + margin, el.top)
+    else pos = clamp(pos.l, pos.t)
+
+    // もし要素と重なりそうなら、少しずらす（最低限）
+    const overlaps =
+      pos.l < el.left + el.width &&
+      pos.l + cw > el.left &&
+      pos.t < el.top + el.height &&
+      pos.t + ch > el.top
+    if (overlaps) {
+      const alt = clamp(el.left - cw - margin, el.top)
+      pos = alt
+    }
+
+    card.style.left = `${Math.round(pos.l)}px`
+    card.style.top = `${Math.round(pos.t)}px`
+  }
+  requestAnimationFrame(() => {
+    positionPalette()
+    setTimeout(positionPalette, 0)
+  })
+
   if (tagInput) tagInput.focus()
   if (isEdit) {
     try {

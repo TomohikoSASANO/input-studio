@@ -410,6 +410,8 @@ select:focus,.input:focus,.textarea:focus{box-shadow:0 0 0 5px rgba(124,92,255,.
 .modal__card{
   position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
   width:520px; max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 40px);
+  overflow:auto;
   border-radius: var(--r2);
   border:1px solid rgba(255,255,255,.9);
   background: rgba(255,255,255,.82);
@@ -419,6 +421,65 @@ select:focus,.input:focus,.textarea:focus{box-shadow:0 0 0 5px rgba(124,92,255,.
 }
 @keyframes modalIn{from{transform:translate(-50%,-48%) scale(.98); opacity:.0}to{transform:translate(-50%,-50%) scale(1); opacity:1}}
 .modal__title{font-weight:900; font-size:18px; margin-bottom:10px}
+
+/* palette: PDF内に収まる“アンカー表示” */
+.modal__card--anchored{
+  transform:none;
+  left:0;
+  top:0;
+  animation: paletteIn .18s ease;
+}
+@keyframes paletteIn{from{transform:translateY(6px); opacity:.0}to{transform:translateY(0); opacity:1}}
+
+/* spinner（上下ボタンで微調整） */
+.spin{
+  display:flex;
+  align-items:stretch;
+  gap:10px;
+}
+.spin .input{flex:1}
+.spin__btns{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.spin__btn{
+  width:38px;
+  height:24px;
+  border-radius:12px;
+  border:1px solid rgba(17,24,39,.12);
+  background: rgba(255,255,255,.62);
+  box-shadow: 0 8px 18px rgba(17,24,39,.08);
+  cursor:pointer;
+  line-height:1;
+}
+.spin__btn:active{transform:translateY(1px)}
+
+/* 色パレット */
+.colorPicker{display:flex; flex-direction:column; gap:8px}
+.swatches{display:flex; flex-wrap:wrap; gap:8px}
+.swatch{
+  width:28px;
+  height:28px;
+  border-radius:10px;
+  border:1px solid rgba(17,24,39,.18);
+  box-shadow: 0 10px 22px rgba(17,24,39,.10);
+  cursor:pointer;
+  position:relative;
+}
+.swatch.is-selected{
+  outline:3px solid rgba(124,92,255,.40);
+  outline-offset:2px;
+}
+.swatch::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  border-radius:10px;
+  background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.65), transparent 45%);
+  opacity:.55;
+  pointer-events:none;
+}
 
 /* 微細な“手ごたえ” */
 body.pulse .logo{animation: logoPulse .42s ease}
