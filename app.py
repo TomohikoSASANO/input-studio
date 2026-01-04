@@ -110,6 +110,7 @@ class Api:
     def __init__(self) -> None:
         _ensure_dirs()
         self._project: LoadedProject | None = None
+        self._last_project_path: str | None = None
         self._ui_mode: str = "worker"
         self._last_dir: str | None = None
         self._working_worker_id: str | None = None
@@ -167,9 +168,22 @@ class Api:
             }
             proj_json = proj_dir / "project.json"
             _write_json(proj_json, data)
+            self._last_project_path = str(proj_json.resolve())
             return {"ok": True, "path": str(proj_json)}
         except Exception as e:
             return {"ok": False, "errors": [str(e)]}
+
+    def _ensure_project_loaded(self) -> bool:
+        """Best-effort auto recovery when API is called before/after project is loaded."""
+        if self._project:
+            return True
+        if not self._last_project_path:
+            return False
+        try:
+            r = self.load_project(self._last_project_path)
+            return bool(r.get("ok"))
+        except Exception:
+            return False
 
     def load_project(self, path: str) -> dict[str, Any]:
         try:
@@ -180,6 +194,7 @@ class Api:
             if not isinstance(data, dict):
                 return {"ok": False, "error": "invalid_json"}
             self._project = LoadedProject(path=p, data=data)
+            self._last_project_path = str(p)
             self._ui_mode = str(data.get("ui_mode") or "worker")
             pdf_path = str(self._pdf_path())
 
@@ -443,7 +458,7 @@ class Api:
         """
         Render an explicit page index with current overlays.
         """
-        if not self._project:
+        if not self._project and not self._ensure_project_loaded():
             return {"ok": False, "error": "no_project"}
         try:
             idx = int(page_index or 0)
@@ -509,7 +524,7 @@ class Api:
             return {"ok": False, "error": str(e)}
 
     def save_current_project(self) -> dict[str, Any]:
-        if not self._project:
+        if not self._project and not self._ensure_project_loaded():
             return {"ok": False, "error": "no_project"}
         try:
             self._project.data["ui_mode"] = self._ui_mode
@@ -548,6 +563,10 @@ class Api:
             if not r.get("id"):
                 continue
             workers.append(r)
+        # If there are no workers yet, seed a friendly default (prevents confusing empty UI).
+        if not workers:
+            workers = [{"id": "w1", "name": "作業者1", "bank": "", "hourly_yen": 0}]
+            _write_json(WORKERS_PATH, workers)
         last = workers[0]["id"] if workers else None
         return {"ok": True, "workers": workers, "last_worker_id": last}
 
@@ -579,7 +598,7 @@ class Api:
 
     # --- work session ---
     def start_work(self, worker_id: str) -> dict[str, Any]:
-        if not self._project:
+        if not self._project and not self._ensure_project_loaded():
             return {"ok": False, "error": "no_project"}
         self._working_worker_id = str(worker_id or "")
         self._private = False
@@ -591,7 +610,7 @@ class Api:
 
     # --- tags / placements / values ---
     def add_text_field(self, tag: str, page: int, x: float, y: float, font_size: int) -> dict[str, Any]:
-        if not self._project:
+        if not self._project and not self._ensure_project_loaded():
             return {"ok": False, "error": "no_project"}
         t = str(tag or "").strip()
         if not t:
@@ -617,7 +636,7 @@ class Api:
         return {"ok": True, "tag": t}
 
     def set_element_pos(self, tag: str, x: float, y: float) -> dict[str, Any]:
-        if not self._project:
+        if not self._project and not self._ensure_project_loaded():
             return {"ok": False, "error": "no_project"}
         t = str(tag or "").strip()
         placements = dict(self._project.data.get("placements") or {})
@@ -635,7 +654,7 @@ class Api:
         return {"ok": True}
 
     def get_element_info(self, tag: str) -> dict[str, Any]:
-        if not self._project:
+        if not self._project and not self._ensure_project_loaded():
             return {"ok": False, "error": "no_project"}
         t = str(tag or "").strip()
         pl = (self._project.data.get("placements") or {}).get(t)
@@ -654,7 +673,7 @@ class Api:
         }
 
     def set_value(self, tag: str, value: str) -> dict[str, Any]:
-        if not self._project:
+        if not self._project and not self._ensure_project_loaded():
             return {"ok": False, "error": "no_project"}
         t = str(tag or "").strip()
         values = dict(self._project.data.get("values") or {})
@@ -670,7 +689,7 @@ class Api:
 
     def update_placement(self, tag: str, patch: dict[str, Any]) -> dict[str, Any]:
         """Update style/position fields for a placement."""
-        if not self._project:
+        if not self._project and not self._ensure_project_loaded():
             return {"ok": False, "error": "no_project"}
         t = str(tag or "").strip()
         if not t:
@@ -702,7 +721,7 @@ class Api:
 
     def delete_tags(self, tags: list[str]) -> dict[str, Any]:
         """Delete tags and associated values/placements."""
-        if not self._project:
+        if not self._project and not self._ensure_project_loaded():
             return {"ok": False, "error": "no_project"}
         if not isinstance(tags, list):
             return {"ok": False, "error": "invalid_args"}
@@ -728,7 +747,7 @@ class Api:
 
     def set_project_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Replace tags/values/placements in current project (for undo/redo & bulk ops)."""
-        if not self._project:
+        if not self._project and not self._ensure_project_loaded():
             return {"ok": False, "error": "no_project"}
         if not isinstance(payload, dict):
             return {"ok": False, "error": "invalid_payload"}
@@ -778,7 +797,7 @@ class Api:
             return 600, 800
 
     def get_preview_png_base64(self, tag: str) -> dict[str, Any]:
-        if not self._project:
+        if not self._project and not self._ensure_project_loaded():
             return {"ok": False, "error": "no_project"}
         t = str(tag or "").strip()
         placements = dict(self._project.data.get("placements") or {})
@@ -788,7 +807,7 @@ class Api:
         return self.get_preview_png_base64_page(page_index)
 
     def finish(self) -> dict[str, Any]:
-        if not self._project:
+        if not self._project and not self._ensure_project_loaded():
             return {"ok": False, "error": "no_project"}
         try:
             pdf_in = self._pdf_path()
