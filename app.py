@@ -259,12 +259,16 @@ class Api:
     def _png_as_data_url(self, file_url: str) -> str | None:
         """Read a PNG file (given as file:// URL) and return base64 data URL. Used as fallback if WebView blocks file://."""
         try:
-            from urllib.parse import urlparse
+            from urllib.parse import urlparse, unquote
 
             parsed = urlparse(file_url)
             if parsed.scheme != "file":
                 return None
-            path = Path(parsed.path)
+            # file:// URL -> local path (handle Windows /C:/... form)
+            p = unquote(parsed.path or "")
+            if p.startswith("/") and len(p) >= 3 and p[2] == ":":
+                p = p[1:]
+            path = Path(p)
             data = path.read_bytes()
             return "data:image/png;base64," + base64.b64encode(data).decode("ascii")
         except Exception:
