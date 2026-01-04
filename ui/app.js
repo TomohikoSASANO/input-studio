@@ -2188,6 +2188,14 @@ async function boot() {
 let _booted = false
 async function bootOnce() {
   if (_booted) return
+  // In desktop(pywebview), DOMContentLoaded can fire before window.pywebview.api is injected.
+  // If we boot too early, we crash and never boot again (because _booted becomes true).
+  if (!window.pywebview || !window.pywebview.api) {
+    bootOnce.__tries = (bootOnce.__tries || 0) + 1
+    // Retry briefly; pywebviewready will also fire.
+    if (bootOnce.__tries < 200) setTimeout(bootOnce, 50)
+    return
+  }
   _booted = true
   await boot()
 }
