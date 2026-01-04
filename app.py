@@ -162,7 +162,7 @@ class Api:
                 "ui_mode": "worker",
                 "tags": [],
                 "values": {},
-                "placements": {},  # tag -> {page,x,y,font_size}
+                "placements": {},  # fid -> {tag,page,x,y,font_size,...}
                 "created_at": _now_iso(),
                 "updated_at": _now_iso(),
             }
@@ -599,6 +599,111 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    def save_project_as(self, name: str) -> dict[str, Any]:
+        """
+        Save as a new project (duplicate current project to a new folder) and load it.
+        """
+        if not self._project and not self._ensure_project_loaded():
+            return {"ok": False, "error": "no_project"}
+        try:
+            new_name = _safe_name(str(name or "").strip()) or "project"
+            pid = f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}-{new_name}"
+            src_dir = self._project.path.parent
+            dst_dir = PROJECTS_DIR / pid
+            # Copy whole project folder, but skip exports
+            shutil.copytree(src_dir, dst_dir, ignore=shutil.ignore_patterns("exports"))
+
+            # Rewrite project.json with updated name/timestamps
+            proj_json = dst_dir / self._project.path.name
+            data = dict(self._project.data or {})
+            data["project"] = new_name
+            data["created_at"] = _now_iso()
+            data["updated_at"] = _now_iso()
+            _write_json(proj_json, data)
+
+            # Load newly saved project
+            self._last_project_path = str(proj_json.resolve())
+            self.load_project(self._last_project_path)
+            return {"ok": True, "path": self._last_project_path}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def append_pdf_to_project(self, pdf_path: str) -> dict[str, Any]:
+        """
+        Append another PDF to current project's template.pdf (merge pages).
+        This produces a single combined PDF for the project.
+        """
+        if not self._project and not self._ensure_project_loaded():
+            return {"ok": False, "error": "no_project"}
+        try:
+            src = Path(pdf_path).resolve()
+            if not src.exists():
+                return {"ok": False, "error": "pdf_not_found"}
+
+            dst_pdf = self._pdf_path()
+            # Close renderer before touching the PDF file on Windows.
+            try:
+                if self._fitz_doc is not None:
+                    self._fitz_doc.close()
+            except Exception:
+                pass
+            self._fitz_doc = None
+            self._fitz_pdf_path = None
+
+            # Keep a copy of the added PDF inside project folder for traceability.
+            try:
+                src_dir = self._project.path.parent / "sources"
+                src_dir.mkdir(parents=True, exist_ok=True)
+                stamp = time.strftime("%Y%m%d-%H%M%S")
+                dst_src = src_dir / f"{stamp}-{_safe_name(src.stem)}.pdf"
+                shutil.copy2(src, dst_src)
+            except Exception:
+                pass
+
+            # Merge existing template and new PDF into template.pdf
+            reader_a = PdfReader(str(dst_pdf))
+            reader_b = PdfReader(str(src))
+            writer = PdfWriter()
+            for pg in reader_a.pages:
+                writer.add_page(pg)
+            for pg in reader_b.pages:
+                writer.add_page(pg)
+
+            tmp = dst_pdf.with_suffix(".pdf.tmp")
+            with open(tmp, "wb") as f:
+                writer.write(f)
+
+            # Optional backup
+            try:
+                bak = dst_pdf.with_name(f"template__bak_{int(time.time())}.pdf")
+                shutil.copy2(dst_pdf, bak)
+            except Exception:
+                pass
+
+            os.replace(tmp, dst_pdf)
+
+            # Reload and reset caches
+            try:
+                if fitz is not None:
+                    self._fitz_doc = fitz.open(str(dst_pdf))
+                    self._fitz_pdf_path = str(dst_pdf)
+                    self._page_count = max(1, int(self._fitz_doc.page_count))
+                else:
+                    self._page_count = max(1, int(len(PdfReader(str(dst_pdf)).pages)))
+            except Exception:
+                self._fitz_doc = None
+                self._fitz_pdf_path = None
+                self._page_count = 1
+
+            self._page_cache.clear()
+            self._invalidate_pages(None)
+
+            self._project.data["updated_at"] = _now_iso()
+            _write_json(self._project.path, self._project.data)
+            return {"ok": True, "page_count": int(self._page_count)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # --- mode / workers ---
     def set_ui_mode(self, mode: str) -> dict[str, Any]:
         m = str(mode or "")
@@ -660,6 +765,20 @@ class Api:
             out.insert(0, item)
         _write_json(WORKERS_PATH, out)
         return {"ok": True, "id": wid}
+
+    def delete_worker(self, worker_id: str) -> dict[str, Any]:
+        try:
+            wid = str(worker_id or "").strip()
+            if not wid:
+                return {"ok": False, "error": "missing_id"}
+            rows = _read_json(WORKERS_PATH, [])
+            if not isinstance(rows, list):
+                rows = []
+            out = [r for r in rows if not (isinstance(r, dict) and str(r.get("id") or "") == wid)]
+            _write_json(WORKERS_PATH, out)
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
     # --- work session ---
     def start_work(self, worker_id: str) -> dict[str, Any]:

@@ -25,7 +25,7 @@ const $ = (sel) => document.querySelector(sel)
     uiMode: "worker",
     tags: [],
     values: {},
-    placements: {}, // tag -> {page,x,y,font_size}
+    placements: {}, // fid -> {tag,page,x,y,font_size,...}
   }
 
   const makeSvgDataUrl = (pageIndex) => {
@@ -35,8 +35,9 @@ const $ = (sel) => document.querySelector(sel)
     const n = demo.pageCount
     const placed = Object.entries(demo.placements).filter(([, pl]) => Number(pl?.page || 0) === pageIndex)
     const overlay = placed
-      .map(([tag, pl]) => {
-        const v = String(demo.values[tag] || "").replaceAll("<br>", "\n")
+      .map(([, pl]) => {
+        const tag = String(pl?.tag || "").trim()
+        const v = String(demo.values[tag] || tag).replaceAll("<br>", "\n")
         const x = Math.max(24, Math.min(w - 24, Number(pl.x || 0)))
         const y = Math.max(24, Math.min(h - 24, Number(pl.y || 0)))
         const fs = Math.max(10, Math.min(36, Number(pl.font_size || 14)))
@@ -106,6 +107,15 @@ const $ = (sel) => document.querySelector(sel)
     async save_current_project() {
       return { ok: true }
     },
+    async save_project_as(name) {
+      demo.projectName = String(name || demo.projectName || "案件")
+      demo.projectPath = "demo/project.json"
+      return { ok: true, path: demo.projectPath }
+    },
+    async append_pdf_to_project() {
+      demo.pageCount = Math.max(1, Number(demo.pageCount || 1) + 1)
+      return { ok: true, page_count: demo.pageCount }
+    },
     async set_ui_mode(mode) {
       demo.uiMode = String(mode || "worker")
       return { ok: true }
@@ -119,6 +129,9 @@ const $ = (sel) => document.querySelector(sel)
     async finish() {
       return { ok: true, dir: "demo/exports", zip: "demo.zip" }
     },
+    async delete_worker() {
+      return { ok: true }
+    },
     async set_value(tag, value) {
       demo.values[String(tag)] = String(value ?? "")
       return { ok: true }
@@ -127,24 +140,34 @@ const $ = (sel) => document.querySelector(sel)
       const t = String(tag || "").trim()
       if (!t) return { ok: false, error: "missing_tag" }
       if (!demo.tags.includes(t)) demo.tags.push(t)
-      demo.placements[t] = { page: Number(page || 0), x: Number(x || 0), y: Number(y || 0), font_size: Number(font_size || 14) }
-      return { ok: true, tag: t }
+      const fid = `f_${Date.now().toString(16)}_${Math.random().toString(16).slice(2, 8)}`
+      demo.placements[fid] = {
+        tag: t,
+        page: Number(page || 0),
+        x: Number(x || 0),
+        y: Number(y || 0),
+        font_size: Number(font_size || 14),
+        color: "#0f172a",
+        line_height: 1.2,
+        letter_spacing: 0,
+      }
+      return { ok: true, fid, tag: t }
     },
-    async set_element_pos(tag, x, y) {
-      const t = String(tag || "").trim()
-      const pl = demo.placements[t] || { page: 0, x: 0, y: 0, font_size: 14 }
+    async set_element_pos(fid, x, y) {
+      const f = String(fid || "").trim()
+      const pl = demo.placements[f] || { tag: "", page: 0, x: 0, y: 0, font_size: 14 }
       pl.x = Number(x || 0)
       pl.y = Number(y || 0)
-      demo.placements[t] = pl
+      demo.placements[f] = pl
       return { ok: true }
     },
-    async update_placement(tag, patch) {
-      const t = String(tag || "").trim()
-      const pl = demo.placements[t]
+    async update_placement(fid, patch) {
+      const f = String(fid || "").trim()
+      const pl = demo.placements[f]
       if (!pl) return { ok: false, error: "not_found" }
       const p = patch && typeof patch === "object" ? patch : {}
       Object.assign(pl, p)
-      demo.placements[t] = pl
+      demo.placements[f] = pl
       return { ok: true }
     },
     async delete_tags(tags) {
@@ -152,8 +175,15 @@ const $ = (sel) => document.querySelector(sel)
       for (const t of arr) {
         demo.tags = demo.tags.filter((k) => k !== t)
         delete demo.values[t]
-        delete demo.placements[t]
+        for (const [fid, pl] of Object.entries(demo.placements)) {
+          if (pl && typeof pl === "object" && String(pl.tag || "").trim() === t) delete demo.placements[fid]
+        }
       }
+      return { ok: true }
+    },
+    async delete_elements(fids) {
+      const arr = Array.isArray(fids) ? fids.map((x) => String(x).trim()).filter(Boolean) : []
+      for (const fid of arr) delete demo.placements[fid]
       return { ok: true }
     },
     async set_project_payload(payload) {
@@ -163,13 +193,14 @@ const $ = (sel) => document.querySelector(sel)
       demo.placements = p.placements && typeof p.placements === "object" ? { ...p.placements } : demo.placements
       return { ok: true }
     },
-    async get_element_info(tag) {
-      const t = String(tag || "").trim()
-      const pl = demo.placements[t]
+    async get_element_info(fid) {
+      const f = String(fid || "").trim()
+      const pl = demo.placements[f]
       if (!pl) return { ok: false, error: "not_found" }
       return {
         ok: true,
         page: Number(pl.page || 0),
+        tag: String(pl.tag || ""),
         x: Number(pl.x || 0),
         y: Number(pl.y || 0),
         font_size: Number(pl.font_size || 14),
@@ -187,11 +218,14 @@ const $ = (sel) => document.querySelector(sel)
         page_index: idx,
       }
     },
-    async get_preview_png_base64(tag) {
-      const t = String(tag || "").trim()
-      const pl = demo.placements[t]
-      const idx = pl ? Number(pl.page || 0) : 0
-      return api.get_preview_png_base64_page(idx)
+    async get_preview_png_base64(tagOrFid) {
+      const q = String(tagOrFid || "").trim()
+      const pl = demo.placements[q]
+      if (pl) return api.get_preview_png_base64_page(Number(pl.page || 0))
+      for (const [, p] of Object.entries(demo.placements)) {
+        if (p && typeof p === "object" && String(p.tag || "").trim() === q) return api.get_preview_png_base64_page(Number(p.page || 0))
+      }
+      return api.get_preview_png_base64_page(0)
     },
   }
 
@@ -238,6 +272,7 @@ const state = {
   sessionStart: null,
   lastProjectDir: null,
   pageCount: 1,
+  // タグ欄は常時表示（右上のON/OFFボタンは廃止）
   showTagPane: true,
   showPanel: true,
   pageLocked: false,
@@ -246,7 +281,6 @@ const state = {
 state.history = loadLocal("inputstudio-history", [])
 state.lastSession = loadLocal("inputstudio-last-session", null)
 state.lastProjectDir = loadLocal("inputstudio-last-dir", null)
-state.showTagPane = loadLocal("inputstudio-show-tagpane", true)
 state.showPanel = loadLocal("inputstudio-show-panel", true)
 
 function loadLocal(key, fallback) {
@@ -572,7 +606,9 @@ function render() {
 
       <div class="miniActions">
         ${isAdmin ? `<button class="chip" id="btnDesign">設計（統括）</button>` : ""}
-        <button class="chip" id="btnSave">上書き保存</button>
+        <button class="chip" id="btnSave" ${state.projectPath ? "" : "disabled"}>上書き保存</button>
+        <button class="chip chip--soft" id="btnSaveAs" ${state.projectPath ? "" : "disabled"}>名前を付けて保存</button>
+        ${isAdmin ? `<button class="chip chip--soft" id="btnAddPdf" ${state.projectPath ? "" : "disabled"}>PDF追加</button>` : ""}
         ${!isAdmin ? `<button class="chip chip--soft" id="btnMyHistory">自分の履歴</button>` : ""}
         ${modeChip}
         ${isAdmin ? `<button class="chip chip--soft" id="btnHistoryExport">履歴CSV</button>` : ""}
@@ -660,7 +696,6 @@ function render() {
         <button class="btn btn--soft" id="btnPrevPage" ${state.projectPath ? "" : "disabled"}>前</button>
         <span class="badge" id="pageIndicator">${(state.previewPageIndex || 0) + 1} / ${state.pageCount || 1}</span>
         <button class="btn btn--soft" id="btnNextPage" ${state.projectPath ? "" : "disabled"}>次</button>
-        <button class="btn btn--soft" id="btnToggleTagPane">${state.showTagPane ? "タグ欄:ON" : "タグ欄:OFF"}</button>
         <button class="btn btn--soft" id="btnTogglePanel">${state.showPanel ? "操作欄:ON" : "操作欄:OFF"}</button>
       </div>
     </div>
@@ -695,9 +730,9 @@ function render() {
     </div>
     <div class="layout ${state.showPanel ? "" : "layout--nopanel"}">
       <div class="panel">${left}</div>
-      <div class="stage ${state.showTagPane ? "stage--split" : "stage--nosplit"}">
+      <div class="stage stage--split">
         ${right}
-        <div class="tagPane ${state.showTagPane ? "" : "is-hidden"}" id="tagPane"></div>
+        <div class="tagPane" id="tagPane"></div>
       </div>
     </div>
     <div class="toast" id="toast"></div>
@@ -857,10 +892,6 @@ function bind() {
     state.values = loaded.values || {}
     state.placements = loaded.placements || {}
     state.pageCount = loaded.page_count || 1
-    if (!state.tags.length) {
-      state.showTagPane = false
-      saveLocal("inputstudio-show-tagpane", state.showTagPane)
-    }
     state.idx = 0
     state.dropDir = loaded.drop_dir || ""
     state.uiMode = loaded.ui_mode || state.uiMode
@@ -922,8 +953,6 @@ function bind() {
     state.tags = []
     state.values = {}
     state.placements = {}
-    state.showTagPane = false
-    saveLocal("inputstudio-show-tagpane", state.showTagPane)
     toast(`PDFを読み込みました（${doc.numPages}ページ）`)
     render()
   }
@@ -972,10 +1001,6 @@ function bind() {
       state.values = loaded.values || {}
       state.placements = loaded.placements || {}
       state.pageCount = loaded.page_count || 1
-      if (!state.tags.length) {
-        state.showTagPane = false
-        saveLocal("inputstudio-show-tagpane", state.showTagPane)
-      }
       state.idx = 0
       state.dropDir = loaded.drop_dir || ""
       state.uiMode = loaded.ui_mode || state.uiMode
@@ -1009,10 +1034,6 @@ function bind() {
       state.values = loaded.values || {}
       state.placements = loaded.placements || {}
       state.pageCount = loaded.page_count || 1
-      if (!state.tags.length) {
-        state.showTagPane = false
-        saveLocal("inputstudio-show-tagpane", state.showTagPane)
-      }
       state.idx = 0
       state.dropDir = loaded.drop_dir || ""
       if (state.lastSession.workerId) state.workerId = state.lastSession.workerId
@@ -1050,6 +1071,53 @@ function bind() {
     }
   }
 
+  const btnSaveAs = $("#btnSaveAs")
+  if (btnSaveAs) btnSaveAs.onclick = async () => {
+    if (!state.projectPath) return toast("先に案件を開いてください")
+    const name0 = String(state.projectName || "案件").trim() || "案件"
+    const name = prompt("名前を付けて保存（新しい案件名）", `${name0}-コピー`)
+    if (!name) return
+    try {
+      const r = await window.pywebview.api.save_project_as(String(name))
+      if (!r?.ok || !r.path) return toast(`保存に失敗: ${r?.error || "unknown"}`)
+      const loaded = await window.pywebview.api.load_project(r.path)
+      if (!loaded?.ok) return toast("保存した案件を開けませんでした")
+      state.projectPath = r.path
+      state.projectName = loaded.project
+      state.tags = loaded.tags || []
+      state.values = loaded.values || {}
+      state.placements = loaded.placements || {}
+      state.pageCount = loaded.page_count || 1
+      state.idx = 0
+      state.dropDir = loaded.drop_dir || ""
+      state.uiMode = loaded.ui_mode || state.uiMode
+      state.lastSession = { path: r.path, workerId: state.workerId, projectName: state.projectName }
+      saveLocal("inputstudio-last-session", state.lastSession)
+      toast("名前を付けて保存しました")
+      pulse()
+      render()
+      await queuePreview()
+    } catch (e) {
+      toast(`保存に失敗しました: ${e}`)
+    }
+  }
+
+  const btnAddPdf = $("#btnAddPdf")
+  if (btnAddPdf) btnAddPdf.onclick = async () => {
+    if (!state.projectPath) return toast("先に案件を開いてください")
+    const api = window.pywebview?.api
+    if (!api?.pick_pdf || !api?.append_pdf_to_project) return toast("PDF追加機能が見つかりません（最新版に更新してください）")
+    const r = await api.pick_pdf()
+    if (!r?.ok || !r.path) return
+    toast("PDFを追加して結合中…")
+    const a = await api.append_pdf_to_project(r.path)
+    if (!a?.ok) return toast(`PDF追加に失敗: ${a?.error || "unknown"}`)
+    state.pageCount = a.page_count || state.pageCount
+    toast(`PDFを追加しました（合計 ${state.pageCount} ページ）`)
+    await showPage(state.previewPageIndex || 0)
+    render()
+  }
+
   const btnPrevPage = $("#btnPrevPage")
   if (btnPrevPage) btnPrevPage.onclick = () => {
     state.pageLocked = true
@@ -1059,12 +1127,6 @@ function bind() {
   if (btnNextPage) btnNextPage.onclick = () => {
     state.pageLocked = true
     showPage((state.previewPageIndex || 0) + 1)
-  }
-  const btnToggleTagPane = $("#btnToggleTagPane")
-  if (btnToggleTagPane) btnToggleTagPane.onclick = () => {
-    state.showTagPane = !state.showTagPane
-    saveLocal("inputstudio-show-tagpane", state.showTagPane)
-    render()
   }
 
   const btnTogglePanel = $("#btnTogglePanel")
@@ -1116,6 +1178,7 @@ function bind() {
 
   $("#workerSelect").onchange = (e) => {
     state.workerId = e.target.value
+    saveLocal("inputstudio-last-worker", state.workerId)
   }
 
   const btnWorker = $("#btnWorker")
@@ -1582,7 +1645,9 @@ async function loadWorkers() {
   const r = await window.pywebview.api.get_workers()
   if (!r.ok) return
   state.workers = r.workers || []
-  state.workerId = r.last_worker_id || (state.workers[0] ? state.workers[0].id : null)
+  const last = loadLocal("inputstudio-last-worker", null)
+  if (last && state.workers.some((w) => w.id === last)) state.workerId = last
+  else state.workerId = r.last_worker_id || (state.workers[0] ? state.workers[0].id : null)
 }
 
 function tickTimerOnce() {
@@ -1604,49 +1669,107 @@ function swipe(dir) {
 
 function openWorkerModal() {
   const modal = $("#modal")
-  const current = state.workers.find((w) => w.id === state.workerId) || {}
-  modal.style.display = "block"
-  modal.innerHTML = `
-    <div class="modal__backdrop" id="modalClose"></div>
-    <div class="modal__card">
-      <div class="modal__title">作業者</div>
-      <div class="field">
-        <div class="label">名前</div>
-        <input class="input" id="mName" value="${escapeHtml(current.name || "")}">
-      </div>
-      <div class="field">
-        <div class="label">振込先</div>
-        <input class="input" id="mBank" value="${escapeHtml(current.bank || "")}">
-      </div>
-      <div class="field">
-        <div class="label">時給（円）</div>
-        <input class="input" id="mHourly" type="number" value="${escapeHtml(current.hourly_yen || 0)}">
-      </div>
-      <div class="row spread" style="margin-top:14px">
-        <button class="btn btn--soft" id="modalCancel">閉じる</button>
-        <button class="btn btn--primary" id="modalSave">保存</button>
-      </div>
-    </div>
-  `
-  $("#modalClose").onclick = () => (modal.style.display = "none")
-  $("#modalCancel").onclick = () => (modal.style.display = "none")
-  $("#modalSave").onclick = async () => {
-    const w = {
-      id: current.id || null,
-      name: $("#mName").value.trim(),
-      bank: $("#mBank").value.trim(),
-      hourly_yen: Number($("#mHourly").value || "0") || 0,
-    }
-    if (!w.name) return toast("名前を入れてください")
-    const r = await window.pywebview.api.upsert_worker(w)
-    if (!r.ok) return toast("保存できませんでした")
-    await loadWorkers()
-    state.workerId = r.id
+  const NEW = "__new__"
+  let editingId = state.workerId || (state.workers[0] ? state.workers[0].id : NEW)
+
+  const close = () => {
     modal.style.display = "none"
-    pulse()
-    toast("保存しました")
-    render()
+    modal.innerHTML = ""
   }
+
+  const renderModal = () => {
+    const isNew = editingId === NEW
+    const current = isNew ? {} : state.workers.find((w) => w.id === editingId) || {}
+    modal.style.display = "block"
+    modal.innerHTML = `
+      <div class="modal__backdrop" id="modalClose"></div>
+      <div class="modal__card">
+        <div class="modal__title">作業者の登録</div>
+        <div class="label">作業者を追加・編集できます（開始/終了の記録にも使います）。</div>
+
+        <div class="row" style="margin-top:10px">
+          <div class="field" style="flex:1">
+            <div class="label">一覧</div>
+            <select id="mPick">
+              <option value="${NEW}" ${isNew ? "selected" : ""}>（新規）</option>
+              ${state.workers.map((w) => `<option value="${escapeHtml(w.id)}" ${w.id === editingId ? "selected" : ""}>${escapeHtml(w.name)}</option>`).join("")}
+            </select>
+          </div>
+          <button class="btn btn--soft" id="mNew">新規</button>
+        </div>
+
+        <div class="field" style="margin-top:10px">
+          <div class="label">名前</div>
+          <input class="input" id="mName" value="${escapeHtml(current.name || "")}" placeholder="例）作業者A">
+        </div>
+        <div class="field">
+          <div class="label">振込先</div>
+          <input class="input" id="mBank" value="${escapeHtml(current.bank || "")}" placeholder="任意">
+        </div>
+        <div class="field">
+          <div class="label">時給（円）</div>
+          <input class="input" id="mHourly" type="number" value="${escapeHtml(current.hourly_yen || 0)}">
+        </div>
+
+        <div class="row spread" style="margin-top:14px">
+          <button class="btn btn--soft" id="modalCancel">閉じる</button>
+          <div class="row">
+            ${!isNew && editingId ? `<button class="btn btn--danger" id="mDelete">削除</button>` : ""}
+            <button class="btn btn--primary" id="modalSave">保存</button>
+          </div>
+        </div>
+      </div>
+    `
+
+    $("#modalClose").onclick = close
+    $("#modalCancel").onclick = close
+    const pick = $("#mPick")
+    if (pick) pick.onchange = (e) => {
+      editingId = e.target.value
+      renderModal()
+    }
+    const btnNew = $("#mNew")
+    if (btnNew) btnNew.onclick = () => {
+      editingId = NEW
+      renderModal()
+      $("#mName")?.focus?.()
+    }
+    const btnDel = $("#mDelete")
+    if (btnDel) btnDel.onclick = async () => {
+      const ok = confirm("この作業者を削除しますか？")
+      if (!ok) return
+      const r = await window.pywebview.api.delete_worker?.(String(editingId))
+      if (!r?.ok) return toast(`削除に失敗: ${r?.error || "unknown"}`)
+      await loadWorkers()
+      editingId = state.workerId || (state.workers[0] ? state.workers[0].id : NEW)
+      pulse()
+      toast("削除しました")
+      renderModal()
+      render()
+    }
+
+    $("#modalSave").onclick = async () => {
+      const w = {
+        id: editingId === NEW ? null : editingId,
+        name: $("#mName").value.trim(),
+        bank: $("#mBank").value.trim(),
+        hourly_yen: Number($("#mHourly").value || "0") || 0,
+      }
+      if (!w.name) return toast("名前を入れてください")
+      const r = await window.pywebview.api.upsert_worker(w)
+      if (!r.ok) return toast("保存できませんでした")
+      await loadWorkers()
+      state.workerId = r.id
+      saveLocal("inputstudio-last-worker", state.workerId)
+      editingId = state.workerId || NEW
+      pulse()
+      toast("保存しました")
+      close()
+      render()
+    }
+  }
+
+  renderModal()
 }
 
 // confetti（軽量）
