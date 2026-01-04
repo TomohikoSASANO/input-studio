@@ -375,7 +375,14 @@ async function showPage(pageIndex) {
   const my = ++pageReq
   const p0 = $("#pageIndicator")
   if (p0) p0.textContent = `${idx + 1} / ${state.pageCount || 1} …`
-  const r = await api.get_preview_png_base64_page(idx)
+  let r = await api.get_preview_png_base64_page(idx)
+  // Auto-recover when backend lost the project (WebView reload / timing / cache issues).
+  if (r && !r.ok && r.error === "no_project" && state.projectPath && typeof api.load_project === "function") {
+    try {
+      await api.load_project(state.projectPath)
+      r = await api.get_preview_png_base64_page(idx)
+    } catch {}
+  }
   if (my !== pageReq) return
   if (r && r.ok) {
     const img = $("#previewImg")
@@ -400,6 +407,11 @@ async function showPage(pageIndex) {
     const p = $("#pageIndicator")
     if (p) p.textContent = `${idx + 1} / ${state.pageCount || 1}`
   } else {
+    const img = $("#previewImg")
+    if (img) {
+      img.src = ""
+      img.style.visibility = "hidden"
+    }
     toast(`ページ表示に失敗: ${r?.error || "unknown"}`)
   }
 }
@@ -1527,7 +1539,13 @@ async function queuePreview(key) {
 
   const k = key || state.tags[state.idx]
   const my = ++previewReq
-  const r = await window.pywebview.api.get_preview_png_base64(k)
+  let r = await window.pywebview.api.get_preview_png_base64(k)
+  if (r && !r.ok && r.error === "no_project" && state.projectPath && window.pywebview?.api?.load_project) {
+    try {
+      await window.pywebview.api.load_project(state.projectPath)
+      r = await window.pywebview.api.get_preview_png_base64(k)
+    } catch {}
+  }
   if (my !== previewReq) return
   if (r.ok) {
     const img = $("#previewImg")
@@ -1556,6 +1574,7 @@ async function queuePreview(key) {
       img.src = ""
       img.style.visibility = "hidden"
     }
+    toast(`プレビュー取得に失敗: ${r?.error || "unknown"}`)
   }
 }
 
