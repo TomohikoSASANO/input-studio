@@ -735,7 +735,7 @@ class Api:
             workers.append(r)
         # If there are no workers yet, seed a friendly default (prevents confusing empty UI).
         if not workers:
-            workers = [{"id": "w1", "name": "作業者1", "bank": "", "hourly_yen": 0}]
+            workers = [{"id": "w1", "name": "作業者1", "bank": ""}]
             _write_json(WORKERS_PATH, workers)
         last = workers[0]["id"] if workers else None
         return {"ok": True, "workers": workers, "last_worker_id": last}
@@ -749,7 +749,6 @@ class Api:
             "id": wid,
             "name": str(w.get("name") or "").strip(),
             "bank": str(w.get("bank") or "").strip(),
-            "hourly_yen": int(w.get("hourly_yen") or 0),
         }
         if not item["name"]:
             return {"ok": False, "error": "missing_name"}

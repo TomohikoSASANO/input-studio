@@ -74,8 +74,8 @@ const $ = (sel) => document.querySelector(sel)
       return {
         ok: true,
         workers: [
-          { id: "w_demo", name: "デモ作業者", bank: "", hourly_yen: 0 },
-          { id: "w_demo2", name: "デモ作業者2", bank: "", hourly_yen: 0 },
+          { id: "w_demo", name: "デモ作業者", bank: "" },
+          { id: "w_demo2", name: "デモ作業者2", bank: "" },
         ],
         last_worker_id: "w_demo",
       }
@@ -660,7 +660,7 @@ function renderGate() {
     saveLocal("inputstudio-last-worker", state.workerId)
   }
   const workerNew = $("#gateWorkerNew")
-  if (workerNew) workerNew.onclick = () => openWorkerModal()
+  if (workerNew) workerNew.onclick = () => openWorkerModal({ mode: "create" })
   const workerGo = $("#gateWorkerGo")
   if (workerGo) workerGo.onclick = async () => {
     try {
@@ -1340,7 +1340,7 @@ function bind() {
   }
 
   const btnWorker = $("#btnWorker")
-  if (btnWorker) btnWorker.onclick = () => openWorkerModal()
+  if (btnWorker) btnWorker.onclick = () => openWorkerModal({ mode: "manage" })
 
   const historyExport = () => {
     if (!state.history.length) return toast("履歴がありません")
@@ -1825,10 +1825,11 @@ function swipe(dir) {
   setTimeout(() => (document.body.dataset.swipe = ""), 260)
 }
 
-function openWorkerModal() {
+function openWorkerModal(opts = {}) {
   const modal = $("#modal")
   const NEW = "__new__"
-  let editingId = state.workerId || (state.workers[0] ? state.workers[0].id : NEW)
+  const mode = String(opts.mode || "manage") // "manage" | "create"
+  let editingId = mode === "create" ? NEW : state.workerId || (state.workers[0] ? state.workers[0].id : NEW)
 
   const close = () => {
     modal.style.display = "none"
@@ -1845,16 +1846,23 @@ function openWorkerModal() {
         <div class="modal__title">作業者の登録</div>
         <div class="label">作業者を追加・編集できます（開始/終了の記録にも使います）。</div>
 
-        <div class="row" style="margin-top:10px">
-          <div class="field" style="flex:1">
-            <div class="label">一覧</div>
-            <select id="mPick">
-              <option value="${NEW}" ${isNew ? "selected" : ""}>（新規）</option>
-              ${state.workers.map((w) => `<option value="${escapeHtml(w.id)}" ${w.id === editingId ? "selected" : ""}>${escapeHtml(w.name)}</option>`).join("")}
-            </select>
-          </div>
-          <button class="btn btn--soft" id="mNew">新規</button>
-        </div>
+        ${
+          mode === "manage"
+            ? `<div class="row" style="margin-top:10px">
+                <div class="field" style="flex:1">
+                  <div class="label">一覧</div>
+                  <select id="mPick">
+                    <option value="${NEW}" ${isNew ? "selected" : ""}>（新規）</option>
+                    ${state.workers.map((w) => `<option value="${escapeHtml(w.id)}" ${w.id === editingId ? "selected" : ""}>${escapeHtml(w.name)}</option>`).join("")}
+                  </select>
+                </div>
+                <button class="btn btn--soft" id="mNew">新規</button>
+              </div>`
+            : `<div class="row" style="margin-top:10px">
+                <div class="badge">新規登録</div>
+                <span class="label">（既存一覧は表示しません）</span>
+              </div>`
+        }
 
         <div class="field" style="margin-top:10px">
           <div class="label">名前</div>
@@ -1862,17 +1870,13 @@ function openWorkerModal() {
         </div>
         <div class="field">
           <div class="label">振込先</div>
-          <input class="input" id="mBank" value="${escapeHtml(current.bank || "")}" placeholder="任意">
-        </div>
-        <div class="field">
-          <div class="label">時給（円）</div>
-          <input class="input" id="mHourly" type="number" value="${escapeHtml(current.hourly_yen || 0)}">
+          <input class="input" id="mBank" value="${escapeHtml(current.bank || "")}" placeholder="○○銀行　普通　1234567　カナザワ　タロウ">
         </div>
 
         <div class="row spread" style="margin-top:14px">
           <button class="btn btn--soft" id="modalCancel">閉じる</button>
           <div class="row">
-            ${!isNew && editingId ? `<button class="btn btn--danger" id="mDelete">削除</button>` : ""}
+            ${mode === "manage" && !isNew && editingId ? `<button class="btn btn--danger" id="mDelete">削除</button>` : ""}
             <button class="btn btn--primary" id="modalSave">保存</button>
           </div>
         </div>
@@ -1882,18 +1886,18 @@ function openWorkerModal() {
     $("#modalClose").onclick = close
     $("#modalCancel").onclick = close
     const pick = $("#mPick")
-    if (pick) pick.onchange = (e) => {
+    if (mode === "manage" && pick) pick.onchange = (e) => {
       editingId = e.target.value
       renderModal()
     }
     const btnNew = $("#mNew")
-    if (btnNew) btnNew.onclick = () => {
+    if (mode === "manage" && btnNew) btnNew.onclick = () => {
       editingId = NEW
       renderModal()
       $("#mName")?.focus?.()
     }
     const btnDel = $("#mDelete")
-    if (btnDel) btnDel.onclick = async () => {
+    if (mode === "manage" && btnDel) btnDel.onclick = async () => {
       const ok = confirm("この作業者を削除しますか？")
       if (!ok) return
       const r = await window.pywebview.api.delete_worker?.(String(editingId))
@@ -1911,7 +1915,6 @@ function openWorkerModal() {
         id: editingId === NEW ? null : editingId,
         name: $("#mName").value.trim(),
         bank: $("#mBank").value.trim(),
-        hourly_yen: Number($("#mHourly").value || "0") || 0,
       }
       if (!w.name) return toast("名前を入れてください")
       const r = await window.pywebview.api.upsert_worker(w)
