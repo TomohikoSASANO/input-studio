@@ -2866,7 +2866,16 @@ function enableOverlayPointer(on) {
 }
 
 async function boot() {
-  await loadWorkers()
+  try {
+    await loadWorkers()
+  } catch (e) {
+    // If worker fetch fails, still show the gate (so user can retry/relaunch).
+    console.error("loadWorkers failed:", e)
+    state.workers = []
+    state.workerId = null
+    state.gate = state.gate || { step: "choose", password: "", error: "" }
+    state.gate.error = "起動に失敗しました（作業者一覧の取得）。アプリを再起動してください。"
+  }
   // 起動時は必ずゲート画面（入力者/管理者の選択）へ。
   // 管理者はパスワード入力が必須のため、ここでは ui_mode を復元しない。
   state.appStage = "gate"
@@ -2891,8 +2900,16 @@ async function bootOnce() {
     if (bootOnce.__tries < 200) setTimeout(bootOnce, 50)
     return
   }
-  _booted = true
-  await boot()
+  try {
+    await boot()
+    _booted = true
+  } catch (e) {
+    console.error("boot failed:", e)
+    _booted = false
+    // Retry once API is ready; do not lock into blank screen.
+    bootOnce.__tries = (bootOnce.__tries || 0) + 1
+    if (bootOnce.__tries < 260) setTimeout(bootOnce, 200)
+  }
 }
 
 // Desktop (pywebview) emits this event. Web demo (Pages) does not.
