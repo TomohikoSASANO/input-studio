@@ -36,6 +36,70 @@ body{
   overflow:hidden;
 }
 
+.gate{
+  height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:24px;
+}
+.gateCard{
+  width:min(720px, calc(100vw - 40px));
+  border-radius: var(--r2);
+  border:1px solid rgba(255,255,255,.9);
+  background: rgba(255,255,255,.72);
+  box-shadow: 0 28px 90px rgba(17,24,39,.18);
+  padding:22px;
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  animation: gateIn .38s ease;
+}
+@keyframes gateIn{from{transform:translateY(10px); opacity:0}to{transform:translateY(0); opacity:1}}
+.gateBrand{
+  display:flex;
+  gap:14px;
+  align-items:center;
+}
+.gateLogo{animation: gateLogo .55s ease}
+@keyframes gateLogo{from{transform:scale(.92); opacity:.0}to{transform:scale(1); opacity:1}}
+.gateTitle{
+  line-height:1.1;
+}
+.gateTitle__top{
+  font-size:36px;
+  font-weight:950;
+  letter-spacing:.2px;
+  background: linear-gradient(135deg, rgba(255,106,162,.95), rgba(124,92,255,.92), rgba(90,215,255,.90));
+  -webkit-background-clip:text;
+  background-clip:text;
+  color:transparent;
+  animation: gateTitle .60s ease;
+}
+@keyframes gateTitle{from{transform:translateY(8px); opacity:0; filter:blur(2px)}to{transform:translateY(0); opacity:1; filter:blur(0)}}
+.gateTitle__sub{
+  margin-top:8px;
+  font-size:13px;
+  color:var(--muted);
+}
+.gateActions{
+  display:flex;
+  gap:12px;
+  margin-top:18px;
+}
+.gateActions .btn{flex:1}
+.gateHint{margin-top:10px}
+.gateSection{margin-top:16px}
+.gateError{
+  margin-top:10px;
+  padding:10px 12px;
+  border-radius:16px;
+  border:1px solid rgba(255,77,109,.20);
+  background: rgba(255,77,109,.08);
+  color:#7f1d1d;
+  font-size:12px;
+  font-weight:800;
+}
+
 .bgBlobs{position:fixed; inset:0; pointer-events:none; filter: blur(22px); opacity:.62}
 .blob{position:absolute; border-radius:999px; mix-blend-mode:multiply; animation: float 10s ease-in-out infinite}
 .blob.b1{width:520px;height:520px; left:-120px; top:-120px; background:rgba(255,106,162,.45)}
@@ -62,8 +126,8 @@ body{
   background: linear-gradient(180deg, rgba(255,255,255,.65), rgba(255,255,255,.50));
   border:1px solid rgba(255,255,255,.8);
   box-shadow: 0 24px 70px var(--shadow2);
-  backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
   overflow:hidden;
   position:relative;
 }

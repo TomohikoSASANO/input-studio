@@ -243,6 +243,12 @@ const state = {
   projectName: null,
   workers: [],
   workerId: null,
+  appStage: "gate", // "gate" | "main"
+  gate: {
+    step: "choose", // "choose" | "worker" | "admin"
+    password: "",
+    error: "",
+  },
   tags: [],
   idx: 0,
   values: {},
@@ -557,7 +563,159 @@ function renderTagPane() {
   }
 }
 
+function renderGate() {
+  const step = state.gate?.step || "choose"
+  const err = String(state.gate?.error || "")
+  const workerOptions = (state.workers || [])
+    .map((w) => `<option value="${escapeHtml(w.id)}" ${w.id === state.workerId ? "selected" : ""}>${escapeHtml(w.name)}</option>`)
+    .join("")
+
+  $("#app").innerHTML = `
+    <div class="bgBlobs" aria-hidden="true">
+      <div class="blob b1"></div>
+      <div class="blob b2"></div>
+      <div class="blob b3"></div>
+    </div>
+    <div class="gate">
+      <div class="gateCard">
+        <div class="gateBrand">
+          <div class="logo gateLogo" aria-hidden="true"></div>
+          <div class="gateTitle">
+            <div class="gateTitle__top">Input Studio</div>
+            <div class="gateTitle__sub">PDFに文字を置いて、完成PDFを作る</div>
+          </div>
+        </div>
+
+        ${
+          step === "choose"
+            ? `<div class="gateActions">
+                <button class="btn btn--primary" id="gateWorker">入力者</button>
+                <button class="btn btn--soft" id="gateAdmin">管理者</button>
+              </div>
+              <div class="label gateHint">入力者：作業者を選んで開始　／　管理者：パスワードで機能を開放</div>`
+            : ""
+        }
+
+        ${
+          step === "worker"
+            ? `<div class="gateSection">
+                <div class="row spread" style="margin-bottom:8px">
+                  <div class="badge">入力者</div>
+                  <button class="btn btn--ghost" id="gateBack">戻る</button>
+                </div>
+                <div class="field">
+                  <div class="label">作業者を選択</div>
+                  <select id="gateWorkerPick">${workerOptions}</select>
+                </div>
+                <div class="row" style="margin-top:10px">
+                  <button class="btn btn--soft" id="gateWorkerNew">新規登録</button>
+                  <button class="btn btn--primary" id="gateWorkerGo">この作業者で開始</button>
+                </div>
+                ${err ? `<div class="gateError">${escapeHtml(err)}</div>` : ""}
+              </div>`
+            : ""
+        }
+
+        ${
+          step === "admin"
+            ? `<div class="gateSection">
+                <div class="row spread" style="margin-bottom:8px">
+                  <div class="badge">管理者</div>
+                  <button class="btn btn--ghost" id="gateBack">戻る</button>
+                </div>
+                <div class="field">
+                  <div class="label">パスワード</div>
+                  <input class="input" id="gatePass" type="password" placeholder="パスワードを入力" value="${escapeHtml(state.gate?.password || "")}">
+                </div>
+                <div class="row" style="margin-top:10px">
+                  <button class="btn btn--primary" id="gateAdminGo">管理者として開始</button>
+                </div>
+                ${err ? `<div class="gateError">${escapeHtml(err)}</div>` : ""}
+              </div>`
+            : ""
+        }
+      </div>
+    </div>
+    <div class="toast" id="toast"></div>
+    <div class="modal" id="modal" style="display:none"></div>
+  `
+
+  // bindings
+  const setStep = (s) => {
+    state.gate.step = s
+    state.gate.error = ""
+    render()
+  }
+  const back = $("#gateBack")
+  if (back) back.onclick = () => setStep("choose")
+
+  const bWorker = $("#gateWorker")
+  if (bWorker) bWorker.onclick = () => setStep("worker")
+  const bAdmin = $("#gateAdmin")
+  if (bAdmin) bAdmin.onclick = () => setStep("admin")
+
+  const workerPick = $("#gateWorkerPick")
+  if (workerPick) workerPick.onchange = (e) => {
+    state.workerId = e.target.value
+    saveLocal("inputstudio-last-worker", state.workerId)
+  }
+  const workerNew = $("#gateWorkerNew")
+  if (workerNew) workerNew.onclick = () => openWorkerModal()
+  const workerGo = $("#gateWorkerGo")
+  if (workerGo) workerGo.onclick = async () => {
+    try {
+      if (!state.workerId) {
+        state.gate.error = "作業者を選んでください"
+        return render()
+      }
+      // Ensure worker mode
+      try {
+        await window.pywebview.api.set_ui_mode?.("worker")
+      } catch {}
+      state.uiMode = "worker"
+      state.appStage = "main"
+      saveLocal("inputstudio-last-role", "worker")
+      render()
+    } catch (e) {
+      state.gate.error = `開始できませんでした: ${e}`
+      render()
+    }
+  }
+
+  const pass = $("#gatePass")
+  if (pass) {
+    pass.focus()
+    pass.oninput = (e) => {
+      state.gate.password = e.target.value
+      state.gate.error = ""
+    }
+    pass.onkeydown = (e) => {
+      if (e.key === "Enter") $("#gateAdminGo")?.click?.()
+    }
+  }
+  const adminGo = $("#gateAdminGo")
+  if (adminGo) adminGo.onclick = async () => {
+    const p = String(state.gate.password || "")
+    if (p !== "takafumi0812") {
+      state.gate.error = "パスワードが違います"
+      render()
+      return
+    }
+    try {
+      await window.pywebview.api.set_ui_mode?.("admin")
+    } catch {}
+    state.uiMode = "admin"
+    state.appStage = "main"
+    saveLocal("inputstudio-last-role", "admin")
+    render()
+  }
+}
+
 function render() {
+  if (state.appStage !== "main") {
+    renderGate()
+    return
+  }
   const total = state.tags.length || 0
   const done = total ? filledCount() : 0
   const idx = state.idx
@@ -2706,12 +2864,16 @@ function enableOverlayPointer(on) {
 
 async function boot() {
   await loadWorkers()
-  try {
-    const s = await window.pywebview.api.get_admin_settings()
-    if (s && s.ok && s.settings) {
-      state.uiMode = s.settings.ui_mode || state.uiMode
-    }
-  } catch (e) {}
+  // 起動時は必ずゲート画面（入力者/管理者の選択）へ。
+  // 管理者はパスワード入力が必須のため、ここでは ui_mode を復元しない。
+  state.appStage = "gate"
+  const lastRole = loadLocal("inputstudio-last-role", "worker")
+  state.gate.step = "choose"
+  state.uiMode = "worker"
+  if (lastRole === "admin") {
+    // “前回は管理者”でも自動ログインはしない（ただしボタン選択の誘導はできる）
+    state.gate.step = "choose"
+  }
   render()
 }
 
