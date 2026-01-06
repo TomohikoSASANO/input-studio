@@ -390,8 +390,8 @@ function fmtTime(sec) {
   const s = Math.max(0, Math.floor(sec))
   const h = String(Math.floor(s / 3600)).padStart(2, "0")
   const m = String(Math.floor((s % 3600) / 60)).padStart(2, "0")
-  const ss = String(s % 60).padStart(2, "0")
-  return `${h}:${m}:${ss}`
+  // 要望: タイマーは「時:分」だけ表示（秒は不要）
+  return `${h}:${m}`
 }
 
 function escapeHtml(s) {
@@ -834,7 +834,7 @@ function render() {
         <div class="row spread" style="margin-top:12px">
           <div class="status">
             <div class="status__pill ${state.working ? (state.inPrivate ? "is-private" : "is-working") : ""}">
-              ${state.working ? (state.inPrivate ? "私用中" : "作業中") : "待機中"}
+              ${state.working ? (state.inPrivate ? "中断中" : "作業中") : "待機中"}
             </div>
             <div class="status__time">${fmtTime(calcNetSeconds())}</div>
           </div>
@@ -844,9 +844,9 @@ function render() {
         </div>
 
         <div class="row" style="margin-top:12px">
-          <button class="btn btn--primary" id="btnStart" ${state.working ? "disabled" : ""}>開始</button>
+          <button class="btn btn--primary" id="btnStart" ${state.working ? "disabled" : ""}>作業タイマー開始</button>
           <button class="btn btn--tint" id="btnPrivate" ${state.working ? "" : "disabled"}>
-            ${state.inPrivate ? "作業に戻る" : "私用"}
+            ${state.inPrivate ? "作業タイマー再開" : "作業タイマー中断"}
           </button>
           <button class="btn btn--danger" id="btnFinish" ${state.working ? "" : "disabled"}>終了</button>
         </div>
@@ -1093,7 +1093,8 @@ function bind() {
     state.inPrivate = false
     state.timerStart = null
     state.privateTotal = 0
-    toast("案件を読み込みました")
+    const started = await autoStartWorkIfPossible()
+    toast(started ? "案件を読み込み、作業タイマーを開始しました" : "案件を読み込みました")
     render()
     await queuePreview()
   }
@@ -1207,7 +1208,8 @@ function bind() {
       state.inPrivate = false
       state.timerStart = null
       state.privateTotal = 0
-      toast("PDFから新規プロジェクトを作成しました。必要に応じてタグを配置してください。")
+      const started = await autoStartWorkIfPossible()
+      toast(started ? "新規案件を作成し、作業タイマーを開始しました" : "PDFから新規プロジェクトを作成しました。必要に応じてタグを配置してください。")
       render()
     } catch (e) {
       alert(`PDFから新規作成に失敗しました: ${e}`)
@@ -1233,7 +1235,8 @@ function bind() {
       state.inPrivate = false
       state.timerStart = null
       state.privateTotal = 0
-      toast("前回の案件を読み込みました")
+      const started = await autoStartWorkIfPossible()
+      toast(started ? "前回の案件を読み込み、作業タイマーを開始しました" : "前回の案件を読み込みました")
       render()
       await queuePreview()
     }
@@ -1414,9 +1417,16 @@ function bind() {
     render()
   }
 
-  $("#workerSelect").onchange = (e) => {
+  $("#workerSelect").onchange = async (e) => {
     state.workerId = e.target.value
     saveLocal("inputstudio-last-worker", state.workerId)
+    if (!state.working) {
+      const started = await autoStartWorkIfPossible()
+      if (started) {
+        toast("作業タイマーを開始しました")
+        render()
+      }
+    }
   }
 
   const btnWorker = $("#btnWorker")
@@ -1463,7 +1473,7 @@ function bind() {
     state.lastSession = { path: state.projectPath, workerId: state.workerId, projectName: state.projectName }
     saveLocal("inputstudio-last-session", state.lastSession)
     pulse()
-    toast("スタート！")
+    toast("作業タイマーを開始しました")
     render()
   }
 
@@ -1473,11 +1483,11 @@ function bind() {
     if (!state.inPrivate) {
       state.inPrivate = true
       state._privateStart = Date.now()
-      toast("私用を開始")
+      toast("作業タイマーを中断しました")
     } else {
       state.inPrivate = false
       state.privateTotal += (Date.now() - state._privateStart) / 1000
-      toast("作業に戻りました")
+      toast("作業タイマーを再開しました")
       pulse()
     }
     render()
@@ -1513,8 +1523,8 @@ function bind() {
     state.timerStart = null
     state.privateTotal = 0
     state.inPrivate = false
-    alert(`提出物を作成しました。\n\nフォルダ: ${r.dir}\nZIP: ${r.zip}\nPDF: ${r.filled_pdf || ""}`)
     render()
+    openFinishModal(r)
   }
 
   const btnPrev = $("#btnPrev")
@@ -1890,9 +1900,109 @@ async function loadWorkers() {
   else state.workerId = r.last_worker_id || (state.workers[0] ? state.workers[0].id : null)
 }
 
+async function autoStartWorkIfPossible() {
+  // 要望: PDF/案件を読み込んだら自動で作業開始（押し忘れ防止）
+  if (!state.projectPath) return false
+  if (state.working) return true
+  if (!state.workerId) {
+    toast("作業者を選ぶと自動で作業タイマー開始します")
+    return false
+  }
+  try {
+    const api = window.pywebview?.api
+    if (!api?.start_work) return false
+    const r = await api.start_work(state.workerId)
+    if (!r?.ok) return false
+    state.working = true
+    state.inPrivate = false
+    state.timerStart = Date.now()
+    state.privateTotal = 0
+    state.sessionStart = new Date().toISOString()
+    state.lastSession = { path: state.projectPath, workerId: state.workerId, projectName: state.projectName }
+    saveLocal("inputstudio-last-session", state.lastSession)
+    return true
+  } catch {
+    return false
+  }
+}
+
+let _timerTicker = null
+function ensureTimerTicker() {
+  if (_timerTicker) return
+  _timerTicker = setInterval(() => {
+    if (state.appStage !== "main") return
+    const el = document.querySelector(".status__time")
+    if (!el) return
+    el.textContent = fmtTime(calcNetSeconds())
+  }, 1000)
+}
+
 function tickTimerOnce() {
   const el = $(".status__time")
   if (el) el.textContent = fmtTime(calcNetSeconds())
+  ensureTimerTicker()
+}
+
+function openFinishModal(result) {
+  const modal = $("#modal")
+  if (!modal) return
+  const dir = String(result?.dir || "")
+  const zip = String(result?.zip || "")
+  const pdf = String(result?.filled_pdf || "")
+
+  const close = () => {
+    modal.style.display = "none"
+    modal.innerHTML = ""
+  }
+
+  modal.style.display = "block"
+  modal.innerHTML = `
+    <div class="modal__backdrop" id="modalClose"></div>
+    <div class="modal__card" style="max-width:680px">
+      <div class="modal__title">提出データを作成しました</div>
+      <div class="label" style="margin-top:6px; line-height:1.7">
+        今回の作業成果物を生成しました。次のボタンを押し、出てきたデータをメールに添付して送信してください。お疲れ様でした！
+      </div>
+      <div class="field" style="margin-top:12px">
+        <div class="label">フォルダ</div>
+        <div class="pathLine" title="${escapeHtml(dir)}"><span class="pathValue">${escapeHtml(dir)}</span></div>
+      </div>
+      <div class="field" style="margin-top:10px">
+        <div class="label">ZIP（添付）</div>
+        <div class="pathLine" title="${escapeHtml(zip)}"><span class="pathValue">${escapeHtml(zip)}</span></div>
+      </div>
+      <div class="field" style="margin-top:10px">
+        <div class="label">PDF（確認用）</div>
+        <div class="pathLine" title="${escapeHtml(pdf)}"><span class="pathValue">${escapeHtml(pdf)}</span></div>
+      </div>
+      <div class="row" style="margin-top:14px; justify-content:flex-end">
+        <button class="btn btn--primary" id="btnOpenAttachment">添付データを開く</button>
+        <button class="btn btn--soft" id="btnFinishClose">閉じる</button>
+      </div>
+    </div>
+  `
+  const closeEl = $("#modalClose")
+  if (closeEl) closeEl.onclick = close
+  const closeBtn = $("#btnFinishClose")
+  if (closeBtn) closeBtn.onclick = close
+  const openBtn = $("#btnOpenAttachment")
+  if (openBtn)
+    openBtn.onclick = async () => {
+      const api = window.pywebview?.api
+      const target = zip || dir || pdf
+      if (!target) return
+      if (api?.reveal_in_explorer) {
+        const r = await api.reveal_in_explorer(target)
+        if (!r?.ok) toast(`開けませんでした: ${r?.error || "unknown"}`)
+        return
+      }
+      try {
+        await navigator.clipboard.writeText(String(target))
+        toast("パスをコピーしました")
+      } catch {
+        toast(String(target))
+      }
+    }
 }
 
 function pulse() {

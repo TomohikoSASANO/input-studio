@@ -692,7 +692,14 @@ class Api:
                 out_dir = (self._project.path.parent / "exports").resolve()
                 out_pdf = out_dir / f"autosave-{int(time.time())}.pdf"
                 self._write_filled_pdf(out_pdf)
-                filled_pdf = str(out_pdf.resolve())
+                # Convenience: also write/overwrite a "latest" filled PDF next to template.pdf
+                latest = (self._project.path.parent / "template_filled_latest.pdf").resolve()
+                try:
+                    shutil.copy2(out_pdf, latest)
+                except Exception:
+                    # If copy fails, fall back to writing directly.
+                    self._write_filled_pdf(latest)
+                filled_pdf = str(latest)
             except Exception:
                 filled_pdf = None
             return {
@@ -736,7 +743,12 @@ class Api:
                 out_dir = (Path(self._last_project_path).resolve().parent / "exports").resolve()
                 out_pdf = out_dir / f"autosave-{int(time.time())}.pdf"
                 self._write_filled_pdf(out_pdf)
-                filled_pdf = str(out_pdf.resolve())
+                latest = (Path(self._last_project_path).resolve().parent / "template_filled_latest.pdf").resolve()
+                try:
+                    shutil.copy2(out_pdf, latest)
+                except Exception:
+                    self._write_filled_pdf(latest)
+                filled_pdf = str(latest)
             except Exception:
                 filled_pdf = None
             return {
@@ -1192,6 +1204,15 @@ class Api:
             out_dir.mkdir(parents=True, exist_ok=True)
             out_pdf = out_dir / f"filled-{int(time.time())}.pdf"
             self._write_filled_pdf(out_pdf)
+            # Convenience: also write/overwrite a "latest" filled PDF next to template.pdf
+            latest = (self._project.path.parent / "template_filled_latest.pdf").resolve()
+            try:
+                shutil.copy2(out_pdf, latest)
+            except Exception:
+                try:
+                    self._write_filled_pdf(latest)
+                except Exception:
+                    pass
 
             out_zip = out_dir / f"filled-{int(time.time())}.zip"
             with zipfile.ZipFile(out_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
@@ -1200,7 +1221,7 @@ class Api:
                 "ok": True,
                 "dir": str(out_dir.resolve()),
                 "zip": str(out_zip.resolve()),
-                "filled_pdf": str(out_pdf.resolve()),
+                "filled_pdf": str(latest if latest else out_pdf.resolve()),
             }
         except Exception as e:
             return {"ok": False, "error": str(e)}
