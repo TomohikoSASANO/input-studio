@@ -811,6 +811,8 @@ function render() {
   const progress = total ? Math.round(((idx + 1) / total) * 100) : 0
 
   const isAdmin = state.uiMode === "admin"
+  // タグ欄は「タグがある時だけ」表示（0件だと空箱が出てPDFが狭くなるため）
+  const showTagPane = (state.tags || []).length > 0
 
   const modeChip = isAdmin
     ? `<button class="chip" id="btnLock">入力者モードにする</button>`
@@ -860,11 +862,19 @@ function render() {
         <button class="chip" id="btnSave" ${state.projectPath ? "" : "disabled"}>上書き保存</button>
         <button class="chip chip--soft" id="btnSaveAs" ${state.projectPath ? "" : "disabled"}>名前を付けて保存</button>
         <button class="chip chip--soft" id="btnAddPdf" ${state.projectPath ? "" : "disabled"}>PDF追加</button>
+        ${state.projectPath ? `<button class="chip chip--soft" id="btnOpenSaved">保存先</button>` : ""}
         ${!isAdmin ? `<button class="chip chip--soft" id="btnMyHistory">自分の履歴</button>` : ""}
         ${modeChip}
         ${isAdmin ? `<button class="chip chip--soft" id="btnHistoryExport">履歴CSV</button>` : ""}
         ${isAdmin ? `<button class="chip chip--soft" id="btnHistoryReset">履歴リセット</button>` : ""}
       </div>
+      ${
+        state.projectPath
+          ? `<div class="pathLine" title="${escapeHtml(state.projectPath)}">
+              保存先: <span class="pathValue">${escapeHtml(state.projectPath)}</span>
+            </div>`
+          : ""
+      }
 
       <div class="glassBox">
         <div class="row spread">
@@ -981,16 +991,16 @@ function render() {
     </div>
     <div class="layout ${state.showPanel ? "" : "layout--nopanel"}">
       <div class="panel">${left}</div>
-      <div class="stage stage--split">
+      <div class="stage ${showTagPane ? "stage--split" : "stage--nosplit"}">
         ${right}
-        <div class="tagPane" id="tagPane"></div>
+        ${showTagPane ? `<div class="tagPane" id="tagPane"></div>` : ``}
       </div>
     </div>
     <div class="toast" id="toast"></div>
     <div class="modal" id="modal" style="display:none"></div>
   `
 
-  renderTagPane()
+  if (showTagPane) renderTagPane()
   bind()
   queuePreview()
   tickTimerOnce()
@@ -1316,10 +1326,10 @@ function bind() {
   if (btnSave) btnSave.onclick = async () => {
     if (!state.projectPath) return toast("先に案件を開いてください")
     try {
-      await window.pywebview.api.save_current_project()
+      const r = await window.pywebview.api.save_current_project()
       state.lastSession = { path: state.projectPath, workerId: state.workerId, projectName: state.projectName }
       saveLocal("inputstudio-last-session", state.lastSession)
-      toast("案件を保存しました")
+      toast("案件を保存しました（保存先ボタンから開けます）")
     } catch (e) {
       toast(`保存に失敗しました: ${e}`)
     }
@@ -1347,7 +1357,7 @@ function bind() {
       state.uiMode = loaded.ui_mode || state.uiMode
       state.lastSession = { path: r.path, workerId: state.workerId, projectName: state.projectName }
       saveLocal("inputstudio-last-session", state.lastSession)
-      toast("名前を付けて保存しました")
+      toast("名前を付けて保存しました（保存先ボタンから開けます）")
       pulse()
       render()
       await queuePreview()
@@ -1374,6 +1384,25 @@ function bind() {
     toast(`PDFを追加しました（合計 ${state.pageCount} ページ）`)
     await showPage(state.previewPageIndex || 0)
     render()
+  }
+
+  const btnOpenSaved = $("#btnOpenSaved")
+  if (btnOpenSaved) btnOpenSaved.onclick = async () => {
+    if (!state.projectPath) return
+    const api = window.pywebview?.api
+    // Preferred: open Explorer via backend
+    if (api?.reveal_in_explorer) {
+      const r = await api.reveal_in_explorer(state.projectPath)
+      if (!r?.ok) toast(`開けませんでした: ${r?.error || "unknown"}`)
+      return
+    }
+    // Fallback: copy path
+    try {
+      await navigator.clipboard.writeText(String(state.projectPath))
+      toast("保存先パスをコピーしました")
+    } catch {
+      toast(String(state.projectPath))
+    }
   }
 
   const btnPrevPage = $("#btnPrevPage")

@@ -595,7 +595,12 @@ class Api:
             self._project.data["ui_mode"] = self._ui_mode
             self._project.data["updated_at"] = _now_iso()
             _write_json(self._project.path, self._project.data)
-            return {"ok": True}
+            return {
+                "ok": True,
+                "path": str(self._project.path),
+                "project_dir": str(self._project.path.parent),
+                "exports_dir": str((self._project.path.parent / "exports").resolve()),
+            }
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -624,7 +629,34 @@ class Api:
             # Load newly saved project
             self._last_project_path = str(proj_json.resolve())
             self.load_project(self._last_project_path)
-            return {"ok": True, "path": self._last_project_path}
+            return {
+                "ok": True,
+                "path": self._last_project_path,
+                "project_dir": str(Path(self._last_project_path).resolve().parent),
+                "exports_dir": str((Path(self._last_project_path).resolve().parent / "exports").resolve()),
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def reveal_in_explorer(self, path: str) -> dict[str, Any]:
+        """
+        Open Windows Explorer selecting the given file/folder.
+        """
+        try:
+            p = Path(str(path or "")).resolve()
+            if p.exists() and p.is_file():
+                target = str(p)
+                subprocess.Popen(["explorer.exe", "/select,", target])
+                return {"ok": True}
+            if p.exists() and p.is_dir():
+                subprocess.Popen(["explorer.exe", str(p)])
+                return {"ok": True}
+            # If project.json path is given but doesn't exist, try its parent.
+            parent = p.parent
+            if parent.exists():
+                subprocess.Popen(["explorer.exe", str(parent)])
+                return {"ok": True}
+            return {"ok": False, "error": "not_found"}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
