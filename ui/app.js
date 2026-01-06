@@ -565,88 +565,8 @@ async function updateTagValue(tag, rawText) {
   queuePreview(tag)
 }
 
-function renderTagPane() {
-  const pane = $("#tagPane")
-  if (!pane) return
-  if (!state.tags.length) {
-    pane.innerHTML = ``
-    return
-  }
-  const items = state.tags
-  pane.innerHTML = `
-    <div class="badge">タグ一覧（Enterで次へ）</div>
-    <div class="badge badge--soft">${items.length} 件</div>
-    <div class="row" style="gap:8px; margin:6px 0">
-      <button class="btn btn--soft" id="btnTagExport">タグを書き出す</button>
-      <button class="btn btn--soft" id="btnTagImport">タグを読み込む</button>
-      <input type="file" id="tagImportFile" accept=".json,.txt" style="display:none" />
-    </div>
-    <div class="list" id="tagList"></div>
-  `
-  const list = $("#tagList")
-  items.forEach((t, i) => {
-    const row = document.createElement("div")
-    row.className = "row"
-    row.innerHTML = `
-      <div class="minw120"><label>${escapeHtml(t)}</label></div>
-      <input data-tag-edit="${escapeHtml(t)}" placeholder="値を入力…">
-    `
-    const inp = row.querySelector("input")
-    const current = (state.values[t] || "").replaceAll("<br>", "\n")
-    inp.value = current
-    inp.addEventListener("keydown", async (ev) => {
-      if (ev.key === "Enter") {
-        ev.preventDefault()
-        const inputs = Array.from(list.querySelectorAll("input[data-tag-edit]"))
-        const idx = inputs.indexOf(inp)
-        if (inputs[idx + 1]) inputs[idx + 1].focus()
-      }
-    })
-    inp.addEventListener("input", () => {
-      const inputs = Array.from(list.querySelectorAll("input[data-tag-edit]"))
-      const idx = inputs.indexOf(inp)
-      updateTagValue(t, inp.value)
-    })
-    list.appendChild(row)
-  })
-
-  const tagImportFile = $("#tagImportFile")
-  const btnTagExport = $("#btnTagExport")
-  const btnTagImport = $("#btnTagImport")
-  if (btnTagExport) {
-    btnTagExport.onclick = () => {
-      const payload = { tags: state.tags, values: state.values }
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" })
-      const a = document.createElement("a")
-      a.href = URL.createObjectURL(blob)
-      a.download = `inputstudio-tags-${Date.now()}.json`
-      a.click()
-      URL.revokeObjectURL(a.href)
-      toast("タグをJSONで書き出しました")
-    }
-  }
-  if (btnTagImport && tagImportFile) {
-    btnTagImport.onclick = () => tagImportFile.click()
-    tagImportFile.onchange = async (e) => {
-      const file = e.target.files?.[0]
-      if (!file) return
-      const text = await file.text().catch(() => null)
-      if (!text) return toast("読み込みに失敗しました")
-      try {
-        const data = JSON.parse(text)
-        const tags = Array.isArray(data.tags) ? data.tags.map(String) : []
-        const values = typeof data.values === "object" && data.values ? data.values : {}
-        if (!tags.length) return toast("タグが見つかりませんでした")
-        state.tags = Array.from(new Set([...state.tags, ...tags]))
-        state.values = { ...state.values, ...values }
-        toast(`タグを読み込みました (${tags.length}件)`)
-        render()
-      } catch {
-        toast("JSONが不正です")
-      }
-    }
-  }
-}
+// NOTE: 右側（または下段）に常時表示するタグ一覧は廃止。
+// タグ操作は「パレット上のタグ一覧」に一本化する。
 
 function renderGate() {
   const step = state.gate?.step || "choose"
@@ -811,8 +731,8 @@ function render() {
   const progress = total ? Math.round(((idx + 1) / total) * 100) : 0
 
   const isAdmin = state.uiMode === "admin"
-  // タグ欄は「タグがある時だけ」表示（0件だと空箱が出てPDFが狭くなるため）
-  const showTagPane = (state.tags || []).length > 0
+  // 画面常設のタグ一覧は表示しない（パレットに統一）
+  const showTagPane = false
 
   const modeChip = isAdmin
     ? `<button class="chip" id="btnLock">入力者モードにする</button>`
@@ -991,16 +911,14 @@ function render() {
     </div>
     <div class="layout ${state.showPanel ? "" : "layout--nopanel"}">
       <div class="panel">${left}</div>
-      <div class="stage ${showTagPane ? "stage--split" : "stage--nosplit"}">
+      <div class="stage stage--nosplit">
         ${right}
-        ${showTagPane ? `<div class="tagPane" id="tagPane"></div>` : ``}
       </div>
     </div>
     <div class="toast" id="toast"></div>
     <div class="modal" id="modal" style="display:none"></div>
   `
 
-  if (showTagPane) renderTagPane()
   bind()
   queuePreview()
   tickTimerOnce()
