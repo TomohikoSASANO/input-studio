@@ -687,7 +687,9 @@ class Api:
                     ascent = float(pdfmetrics.getAscent(font_name) or 0) / 1000.0 * fs_pt
                 except Exception:
                     ascent = fs_pt * 0.8
-                y_base0 = y_top_pt - ascent
+                # Empirically, ReportLab font metrics can be slightly optimistic vs preview.
+                # Apply a tiny downward adjustment to eliminate "a bit too high" exports.
+                y_base0 = y_top_pt - ascent - (0.08 * fs_pt)
 
                 letter_s_pt = float(letter_s_px) * 72.0 / RENDER_DPI
 
