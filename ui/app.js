@@ -405,6 +405,91 @@ function tipIcon(n, text) {
   return `<span class="tipIcon" data-tip="${escapeHtml(text)}">${n}</span>`
 }
 
+// Tooltip that never goes off-screen (replaces CSS-only tooltip).
+let _tipFloatBound = false
+function bindTipFloatOnce() {
+  if (_tipFloatBound) return
+  _tipFloatBound = true
+
+  const ensureEl = () => {
+    let el = document.getElementById("tipFloat")
+    if (!el) {
+      el = document.createElement("div")
+      el.id = "tipFloat"
+      el.className = "tipFloat"
+      el.style.display = "none"
+      document.body.appendChild(el)
+    }
+    return el
+  }
+
+  let active = null
+  const hide = () => {
+    const el = document.getElementById("tipFloat")
+    if (el) el.style.display = "none"
+    active = null
+  }
+  const showFor = (target) => {
+    const tip = target?.getAttribute?.("data-tip")
+    if (!tip) return
+    active = target
+    const el = ensureEl()
+    el.textContent = tip
+    el.style.display = "block"
+
+    const r = target.getBoundingClientRect()
+    const br = el.getBoundingClientRect()
+    const pad = 10
+    const clamp = (v, a, b) => Math.min(Math.max(v, a), b)
+    let left = r.left + r.width / 2 - br.width / 2
+    left = clamp(left, pad, window.innerWidth - br.width - pad)
+    let top = r.top - br.height - 10
+    if (top < pad) top = r.bottom + 10
+    top = clamp(top, pad, window.innerHeight - br.height - pad)
+    el.style.left = `${Math.round(left)}px`
+    el.style.top = `${Math.round(top)}px`
+  }
+
+  const findIcon = (ev) => ev?.target?.closest?.(".tipIcon")
+  document.addEventListener("pointerover", (ev) => {
+    const icon = findIcon(ev)
+    if (!icon) return
+    showFor(icon)
+  })
+  document.addEventListener("pointerout", (ev) => {
+    const icon = findIcon(ev)
+    if (!icon) return
+    const rel = ev.relatedTarget
+    if (rel && icon.contains(rel)) return
+    hide()
+  })
+  document.addEventListener("focusin", (ev) => {
+    const icon = findIcon(ev)
+    if (!icon) return
+    showFor(icon)
+  })
+  document.addEventListener("focusout", (ev) => {
+    const icon = findIcon(ev)
+    if (!icon) return
+    hide()
+  })
+  window.addEventListener(
+    "scroll",
+    () => {
+      if (!active) return
+      showFor(active)
+    },
+    true
+  )
+  window.addEventListener("resize", () => {
+    if (!active) return
+    showFor(active)
+  })
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") hide()
+  })
+}
+
 async function showPage(pageIndex) {
   if (!state.projectPath) return
   const api = window.pywebview?.api
@@ -741,16 +826,24 @@ function render() {
       </div>
 
       <div class="guide">
+        ${
+          isAdmin
+            ? `<div class="guide__row">
+                <span class="guide__step">1</span>
+                <div style="flex:1">管理者：PDFを選んで新規プロジェクトを作成（フォーム検出なし。自分で欄を配置）</div>
+                <button class="chip chip--soft" id="btnOpenPdf">PDFから新規</button>
+                ${window.__INPUTSTUDIO_DEMO__ ? `<input type="file" id="demoPdfFile" accept=".pdf,application/pdf" style="display:none" />` : ""}
+              </div>`
+            : ""
+        }
         <div class="guide__row">
-          <span class="guide__step">1</span>
-          <div style="flex:1">初めて：PDFを選んで新規プロジェクトを作成（フォーム検出なし。自分で欄を配置）</div>
-          <button class="chip chip--soft" id="btnOpenPdf">PDFから新規</button>
-          ${window.__INPUTSTUDIO_DEMO__ ? `<input type="file" id="demoPdfFile" accept=".pdf,application/pdf" style="display:none" />` : ""}
-        </div>
-        <div class="guide__row">
-          <span class="guide__step">2</span>
-          <div style="flex:1">続きから：既存の案件（プロジェクト）を開いて編集/入力を再開</div>
-          <button class="chip" id="btnOpen">案件を開く ${tipIcon(1, "PDF付きの案件ファイルを選択して開始します。")} </button>
+          <span class="guide__step">${isAdmin ? "2" : "1"}</span>
+          <div style="flex:1">${
+            isAdmin
+              ? "続きから：既存の案件（プロジェクト）を開いて編集/入力を再開"
+              : "入力者：管理者が用意した案件（プロジェクト）を開いて入力を開始"
+          }</div>
+          <button class="chip" id="btnOpen">案件を開く ${tipIcon(1, "PDF付きの案件ファイル（project.json）を選択して開始します。")} </button>
           ${state.lastSession ? `<button class="chip chip--soft" id="btnResume">続きから</button>` : ""}
         </div>
         ${
@@ -766,7 +859,7 @@ function render() {
         ${isAdmin ? `<button class="chip" id="btnDesign">設計（統括）</button>` : ""}
         <button class="chip" id="btnSave" ${state.projectPath ? "" : "disabled"}>上書き保存</button>
         <button class="chip chip--soft" id="btnSaveAs" ${state.projectPath ? "" : "disabled"}>名前を付けて保存</button>
-        ${isAdmin ? `<button class="chip chip--soft" id="btnAddPdf" ${state.projectPath ? "" : "disabled"}>PDF追加</button>` : ""}
+        <button class="chip chip--soft" id="btnAddPdf" ${state.projectPath ? "" : "disabled"}>PDF追加</button>
         ${!isAdmin ? `<button class="chip chip--soft" id="btnMyHistory">自分の履歴</button>` : ""}
         ${modeChip}
         ${isAdmin ? `<button class="chip chip--soft" id="btnHistoryExport">履歴CSV</button>` : ""}
@@ -908,6 +1001,9 @@ function render() {
 }
 
 function bind() {
+  // Tooltips that never go off-screen
+  bindTipFloatOnce()
+
   // Global hotkeys (selection / undo / copy-paste)
   document.onkeydown = async (ev) => {
     if (!state.projectPath) return
@@ -1265,6 +1361,10 @@ function bind() {
     if (!state.projectPath) return toast("先に案件を開いてください")
     const api = window.pywebview?.api
     if (!api?.pick_pdf || !api?.append_pdf_to_project) return toast("PDF追加機能が見つかりません（最新版に更新してください）")
+    if (state.uiMode !== "admin") {
+      const ok = confirm("この案件にPDFを追加します。ページ数が増え、配置は全ページに対して有効になります。\n（管理者に確認済みですか？）")
+      if (!ok) return
+    }
     const r = await api.pick_pdf()
     if (!r?.ok || !r.path) return
     toast("PDFを追加して結合中…")

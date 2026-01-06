@@ -247,12 +247,15 @@ body{
   box-shadow:0 6px 16px rgba(0,0,0,0.16);
 }
 .tipIcon::after{
-  content:attr(data-tip);
-  position:absolute;
-  left:50%;
-  bottom:calc(100% + 6px);
-  transform:translateX(-50%);
-  min-width:180px;
+  /* JS側で画面外に出ないツールチップを描画するため、CSSツールチップは無効化 */
+  content:"";
+  display:none;
+}
+.tipIcon:hover::after{opacity:0}
+
+.tipFloat{
+  position:fixed;
+  z-index:9999;
   max-width:260px;
   background:rgba(15,23,42,0.92);
   color:#fff;
@@ -260,14 +263,8 @@ body{
   padding:8px 10px;
   border-radius:12px;
   box-shadow:0 12px 30px rgba(0,0,0,0.28);
-  opacity:0;
   pointer-events:none;
-  transition:opacity .12s ease;
   white-space:normal;
-  z-index:30;
-}
-.tipIcon:hover::after{
-  opacity:1;
 }
 .chip:active{transform:translateY(1px)}
 
