@@ -71,6 +71,22 @@ def _safe_name(s: str) -> str:
     return out or "project"
 
 
+def _worker_name(worker_id: str | None) -> str:
+    """Resolve worker id to display name (best-effort, local-only)."""
+    wid = str(worker_id or "").strip()
+    if not wid:
+        return ""
+    try:
+        rows = _read_json(WORKERS_PATH, [])
+        if isinstance(rows, list):
+            for r in rows:
+                if isinstance(r, dict) and str(r.get("id") or "").strip() == wid:
+                    return str(r.get("name") or "").strip()
+    except Exception:
+        pass
+    return wid
+
+
 def _pick_file(title: str, filetypes: list[tuple[str, str]], initialdir: str | None = None) -> str | None:
     # tkinter is stdlib; make sure the dialog is visible on pywebview contexts.
     import tkinter as tk
@@ -627,6 +643,15 @@ class Api:
 
             packet = io.BytesIO()
             c = canvas.Canvas(packet, pagesize=(w_pt, h_pt))
+            # IMPORTANT: Ensure the overlay PDF always has at least 1 page.
+            # ReportLab can produce a 0-page PDF if nothing is drawn; pypdf then fails
+            # with "Sequence index out of range" when accessing pages[0].
+            try:
+                c.setFont("Helvetica", 1)
+                c.setFillColor(HexColor("#ffffff"))
+                c.drawString(-10000, -10000, " ")
+            except Exception:
+                pass
             for _, p in placements.items():
                 if not isinstance(p, dict):
                     continue
@@ -690,7 +715,10 @@ class Api:
             filled_pdf = None
             try:
                 out_dir = (self._project.path.parent / "exports").resolve()
-                out_pdf = out_dir / f"autosave-{int(time.time())}.pdf"
+                stamp = time.strftime("%Y%m%d-%H%M%S")
+                proj = _safe_name(str(self._project.data.get("project") or "project"))
+                who = _safe_name(_worker_name(self._working_worker_id) or "worker")
+                out_pdf = out_dir / f"autosave-{proj}-{stamp}-{who}.pdf"
                 self._write_filled_pdf(out_pdf)
                 # Convenience: also write/overwrite a "latest" filled PDF next to template.pdf
                 latest = (self._project.path.parent / "template_filled_latest.pdf").resolve()
@@ -741,7 +769,10 @@ class Api:
             filled_pdf = None
             try:
                 out_dir = (Path(self._last_project_path).resolve().parent / "exports").resolve()
-                out_pdf = out_dir / f"autosave-{int(time.time())}.pdf"
+                stamp = time.strftime("%Y%m%d-%H%M%S")
+                proj = _safe_name(str(self._project.data.get("project") or "project"))
+                who = _safe_name(_worker_name(self._working_worker_id) or "worker")
+                out_pdf = out_dir / f"autosave-{proj}-{stamp}-{who}.pdf"
                 self._write_filled_pdf(out_pdf)
                 latest = (Path(self._last_project_path).resolve().parent / "template_filled_latest.pdf").resolve()
                 try:
@@ -1202,7 +1233,11 @@ class Api:
         try:
             out_dir = self._project.path.parent / "exports"
             out_dir.mkdir(parents=True, exist_ok=True)
-            out_pdf = out_dir / f"filled-{int(time.time())}.pdf"
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            proj = _safe_name(str(self._project.data.get("project") or "project"))
+            who = _safe_name(_worker_name(self._working_worker_id) or "worker")
+            base = f"{proj}-{stamp}-{who}"
+            out_pdf = out_dir / f"{base}.pdf"
             self._write_filled_pdf(out_pdf)
             # Convenience: also write/overwrite a "latest" filled PDF next to template.pdf
             latest = (self._project.path.parent / "template_filled_latest.pdf").resolve()
@@ -1214,7 +1249,7 @@ class Api:
                 except Exception:
                     pass
 
-            out_zip = out_dir / f"filled-{int(time.time())}.zip"
+            out_zip = out_dir / f"{base}.zip"
             with zipfile.ZipFile(out_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
                 z.write(out_pdf, arcname=out_pdf.name)
             return {
