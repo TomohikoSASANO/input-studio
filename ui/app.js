@@ -282,6 +282,8 @@ const state = {
   showTagPane: true,
   showPanel: true,
   pageLocked: false,
+  lastFilledPdf: null,
+  lastExportDir: null,
 }
 
 state.history = loadLocal("inputstudio-history", [])
@@ -783,6 +785,7 @@ function render() {
         <button class="chip chip--soft" id="btnSaveAs" ${state.projectPath ? "" : "disabled"}>名前を付けて保存</button>
         <button class="chip chip--soft" id="btnAddPdf" ${state.projectPath ? "" : "disabled"}>PDF追加</button>
         ${state.projectPath ? `<button class="chip chip--soft" id="btnOpenSaved">保存先</button>` : ""}
+        ${state.lastFilledPdf ? `<button class="chip chip--soft" id="btnOpenFilled">提出PDF</button>` : ""}
         ${!isAdmin ? `<button class="chip chip--soft" id="btnMyHistory">自分の履歴</button>` : ""}
         ${modeChip}
         ${isAdmin ? `<button class="chip chip--soft" id="btnHistoryExport">履歴CSV</button>` : ""}
@@ -792,6 +795,13 @@ function render() {
         state.projectPath
           ? `<div class="pathLine" title="${escapeHtml(state.projectPath)}">
               保存先: <span class="pathValue">${escapeHtml(state.projectPath)}</span>
+            </div>`
+          : ""
+      }
+      ${
+        state.lastFilledPdf
+          ? `<div class="pathLine" title="${escapeHtml(state.lastFilledPdf)}">
+              提出PDF: <span class="pathValue">${escapeHtml(state.lastFilledPdf)}</span>
             </div>`
           : ""
       }
@@ -1247,7 +1257,10 @@ function bind() {
       const r = await window.pywebview.api.save_current_project()
       state.lastSession = { path: state.projectPath, workerId: state.workerId, projectName: state.projectName }
       saveLocal("inputstudio-last-session", state.lastSession)
-      toast("案件を保存しました（保存先ボタンから開けます）")
+      if (r?.filled_pdf) state.lastFilledPdf = r.filled_pdf
+      if (r?.exports_dir) state.lastExportDir = r.exports_dir
+      toast("案件を保存しました（提出PDFも保存）")
+      render()
     } catch (e) {
       toast(`保存に失敗しました: ${e}`)
     }
@@ -1275,7 +1288,9 @@ function bind() {
       state.uiMode = loaded.ui_mode || state.uiMode
       state.lastSession = { path: r.path, workerId: state.workerId, projectName: state.projectName }
       saveLocal("inputstudio-last-session", state.lastSession)
-      toast("名前を付けて保存しました（保存先ボタンから開けます）")
+      if (r?.filled_pdf) state.lastFilledPdf = r.filled_pdf
+      if (r?.exports_dir) state.lastExportDir = r.exports_dir
+      toast("名前を付けて保存しました（提出PDFも保存）")
       pulse()
       render()
       await queuePreview()
@@ -1320,6 +1335,24 @@ function bind() {
       toast("保存先パスをコピーしました")
     } catch {
       toast(String(state.projectPath))
+    }
+  }
+
+  const btnOpenFilled = $("#btnOpenFilled")
+  if (btnOpenFilled) btnOpenFilled.onclick = async () => {
+    const p = state.lastFilledPdf || state.lastExportDir
+    if (!p) return
+    const api = window.pywebview?.api
+    if (api?.reveal_in_explorer) {
+      const r = await api.reveal_in_explorer(p)
+      if (!r?.ok) toast(`開けませんでした: ${r?.error || "unknown"}`)
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(String(p))
+      toast("提出PDFパスをコピーしました")
+    } catch {
+      toast(String(p))
     }
   }
 
@@ -1456,7 +1489,9 @@ function bind() {
     await pushValue()
     toast("提出物を作成中…")
     const r = await window.pywebview.api.finish()
-    if (!r.ok) return toast("提出物の作成に失敗しました")
+    if (!r.ok) return toast(`提出物の作成に失敗しました: ${r.error || "unknown"}`)
+    if (r?.filled_pdf) state.lastFilledPdf = r.filled_pdf
+    if (r?.dir) state.lastExportDir = r.dir
     state.working = false
     state.justCompleted = true
     const end = new Date().toISOString()
@@ -1478,7 +1513,7 @@ function bind() {
     state.timerStart = null
     state.privateTotal = 0
     state.inPrivate = false
-    alert(`提出物を作成しました。\n\nフォルダ: ${r.dir}\nZIP: ${r.zip}`)
+    alert(`提出物を作成しました。\n\nフォルダ: ${r.dir}\nZIP: ${r.zip}\nPDF: ${r.filled_pdf || ""}`)
     render()
   }
 
