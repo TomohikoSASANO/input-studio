@@ -665,34 +665,47 @@ class Api:
                     continue
                 x_px = float(p.get("x") or 0)
                 y_px = float(p.get("y") or 0)
-                fs = int(p.get("font_size") or 14)
+                # NOTE: placements store sizes in preview-pixels (RENDER_DPI space).
+                # Convert to PDF points so exported PDF matches preview exactly.
+                fs_px = float(p.get("font_size") or 14)
                 color = str(p.get("color") or "#0f172a")
                 line_h = float(p.get("line_height") or 1.2)
-                letter_s = float(p.get("letter_spacing") or 0)
+                letter_s_px = float(p.get("letter_spacing") or 0)
                 x_pt = x_px * 72.0 / RENDER_DPI
-                y_pt = (h_px - y_px) * 72.0 / RENDER_DPI
+                y_top_pt = (h_px - y_px) * 72.0 / RENDER_DPI
                 font_name = jp_font if _needs_jp(text) else "Helvetica"
-                c.setFont(font_name, fs)
+                fs_pt = float(fs_px) * 72.0 / RENDER_DPI
+                c.setFont(font_name, fs_pt)
                 try:
                     c.setFillColor(HexColor(color))
                 except Exception:
                     c.setFillColor(HexColor("#0f172a"))
 
+                # ReportLab's drawString uses baseline y, while preview (PIL) uses top-left.
+                # Convert top-left y to baseline using font ascent.
+                try:
+                    ascent = float(pdfmetrics.getAscent(font_name) or 0) / 1000.0 * fs_pt
+                except Exception:
+                    ascent = fs_pt * 0.8
+                y_base0 = y_top_pt - ascent
+
+                letter_s_pt = float(letter_s_px) * 72.0 / RENDER_DPI
+
                 def _draw_line_with_spacing(x0: float, y0: float, s: str) -> None:
-                    if not letter_s:
+                    if not letter_s_pt:
                         c.drawString(x0, y0, s)
                         return
                     cx = x0
                     for ch in s:
                         c.drawString(cx, y0, ch)
                         try:
-                            w = pdfmetrics.stringWidth(ch, font_name, fs)
+                            w = pdfmetrics.stringWidth(ch, font_name, fs_pt)
                         except Exception:
-                            w = fs * 0.62
-                        cx += float(w) + float(letter_s) * 72.0 / RENDER_DPI
+                            w = fs_pt * 0.62
+                        cx += float(w) + float(letter_s_pt)
 
                 for line_idx, line in enumerate(text.splitlines() or [""]):
-                    y_line = y_pt - (fs * line_h) * line_idx
+                    y_line = y_base0 - (fs_pt * line_h) * line_idx
                     _draw_line_with_spacing(x_pt, y_line, line)
             c.save()
             packet.seek(0)
