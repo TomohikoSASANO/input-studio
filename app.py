@@ -719,32 +719,33 @@ class Api:
         with out_pdf.open("wb") as f:
             writer.write(f)
 
-    def save_current_project(self) -> dict[str, Any]:
+    def save_current_project(self, make_filled_pdf: bool = False) -> dict[str, Any]:
         if not self._project and not self._ensure_project_loaded():
             return {"ok": False, "error": "no_project"}
         try:
             self._project.data["ui_mode"] = self._ui_mode
             self._project.data["updated_at"] = _now_iso()
             _write_json(self._project.path, self._project.data)
-            # Also keep a filled PDF snapshot in exports (safety backup).
+            # NOTE: Filled PDF generation is expensive; only do it on explicit save/finish.
             filled_pdf = None
-            try:
-                out_dir = (self._project.path.parent / "exports").resolve()
-                stamp = time.strftime("%Y%m%d-%H%M%S")
-                proj = _safe_name(str(self._project.data.get("project") or "project"))
-                who = _safe_name(_worker_name(self._working_worker_id) or "worker")
-                out_pdf = out_dir / f"autosave-{proj}-{stamp}-{who}.pdf"
-                self._write_filled_pdf(out_pdf)
-                # Convenience: also write/overwrite a "latest" filled PDF next to template.pdf
-                latest = (self._project.path.parent / "template_filled_latest.pdf").resolve()
+            if bool(make_filled_pdf):
                 try:
-                    shutil.copy2(out_pdf, latest)
+                    out_dir = (self._project.path.parent / "exports").resolve()
+                    stamp = time.strftime("%Y%m%d-%H%M%S")
+                    proj = _safe_name(str(self._project.data.get("project") or "project"))
+                    who = _safe_name(_worker_name(self._working_worker_id) or "worker")
+                    out_pdf = out_dir / f"autosave-{proj}-{stamp}-{who}.pdf"
+                    self._write_filled_pdf(out_pdf)
+                    # Convenience: also write/overwrite a "latest" filled PDF next to template.pdf
+                    latest = (self._project.path.parent / "template_filled_latest.pdf").resolve()
+                    try:
+                        shutil.copy2(out_pdf, latest)
+                    except Exception:
+                        # If copy fails, fall back to writing directly.
+                        self._write_filled_pdf(latest)
+                    filled_pdf = str(latest)
                 except Exception:
-                    # If copy fails, fall back to writing directly.
-                    self._write_filled_pdf(latest)
-                filled_pdf = str(latest)
-            except Exception:
-                filled_pdf = None
+                    filled_pdf = None
             return {
                 "ok": True,
                 "path": str(self._project.path),
@@ -755,7 +756,7 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def save_project_as(self, name: str) -> dict[str, Any]:
+    def save_project_as(self, name: str, make_filled_pdf: bool = True) -> dict[str, Any]:
         """
         Save as a new project (duplicate current project to a new folder) and load it.
         """
@@ -780,23 +781,23 @@ class Api:
             # Load newly saved project
             self._last_project_path = str(proj_json.resolve())
             self.load_project(self._last_project_path)
-            # Also keep a filled PDF snapshot in exports (safety backup).
             filled_pdf = None
-            try:
-                out_dir = (Path(self._last_project_path).resolve().parent / "exports").resolve()
-                stamp = time.strftime("%Y%m%d-%H%M%S")
-                proj = _safe_name(str(self._project.data.get("project") or "project"))
-                who = _safe_name(_worker_name(self._working_worker_id) or "worker")
-                out_pdf = out_dir / f"autosave-{proj}-{stamp}-{who}.pdf"
-                self._write_filled_pdf(out_pdf)
-                latest = (Path(self._last_project_path).resolve().parent / "template_filled_latest.pdf").resolve()
+            if bool(make_filled_pdf):
                 try:
-                    shutil.copy2(out_pdf, latest)
+                    out_dir = (Path(self._last_project_path).resolve().parent / "exports").resolve()
+                    stamp = time.strftime("%Y%m%d-%H%M%S")
+                    proj = _safe_name(str(self._project.data.get("project") or "project"))
+                    who = _safe_name(_worker_name(self._working_worker_id) or "worker")
+                    out_pdf = out_dir / f"autosave-{proj}-{stamp}-{who}.pdf"
+                    self._write_filled_pdf(out_pdf)
+                    latest = (Path(self._last_project_path).resolve().parent / "template_filled_latest.pdf").resolve()
+                    try:
+                        shutil.copy2(out_pdf, latest)
+                    except Exception:
+                        self._write_filled_pdf(latest)
+                    filled_pdf = str(latest)
                 except Exception:
-                    self._write_filled_pdf(latest)
-                filled_pdf = str(latest)
-            except Exception:
-                filled_pdf = None
+                    filled_pdf = None
             return {
                 "ok": True,
                 "path": self._last_project_path,

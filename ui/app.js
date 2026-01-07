@@ -378,6 +378,42 @@ function uniqueTag(base) {
   return `${clean}_${Date.now()}`
 }
 
+function isWideChar(ch) {
+  const c = (ch || "").charCodeAt(0) || 0
+  // Hiragana/Katakana/CJK, fullwidth forms, punctuation blocks
+  if ((c >= 0x3040 && c <= 0x30ff) || (c >= 0x3400 && c <= 0x9fff) || (c >= 0xff00 && c <= 0xffef) || (c >= 0x3000 && c <= 0x303f))
+    return true
+  return false
+}
+
+function placementBoxOnPage(fid, pl) {
+  const fs = Number(pl?.font_size || 14) || 14
+  const lh = Number(pl?.line_height || 1.2) || 1.2
+  const ls = Number(pl?.letter_spacing || 0) || 0
+  const tag = String(pl?.tag || "").trim()
+  const v = String((state.values?.[tag] || "")).replaceAll("<br>", "\n")
+  const lines = (v ? v.split("\n") : []).filter((s) => s != null)
+  const drawLines = lines.length ? lines : [tag || fid]
+
+  const padX = Math.max(8, fs * 0.35)
+  const padY = Math.max(6, fs * 0.25)
+  let maxW = 0
+  for (const line of drawLines) {
+    const s = String(line || "")
+    let w = 0
+    for (const ch of s) {
+      w += (isWideChar(ch) ? fs * 1.0 : fs * 0.62)
+    }
+    if (s.length > 1) w += (s.length - 1) * ls
+    maxW = Math.max(maxW, w)
+  }
+  const wPage = Math.max(42, maxW + padX * 2)
+  const hPage = Math.max(22, drawLines.length * fs * lh + padY * 2)
+  const x = Number(pl?.x || 0)
+  const y = Number(pl?.y || 0)
+  return { x, y, w: wPage, h: hPage, padX, padY }
+}
+
 function toast(msg) {
   const el = $("#toast")
   el.textContent = msg
@@ -880,20 +916,21 @@ function render() {
   `
 
   const right = `
-    <div class="previewTop">
-      <div class="badge">ライブプレビュー ${tipIcon(4, "入力した値がPDF画像に重ねて表示されます。ページ切替で別ページも確認できます。")}</div>
-      <div class="badge badge--soft">入力が反映されます</div>
-      <div class="row" style="margin-left:auto; gap:8px; flex:0 0 auto">
-        <button class="btn btn--soft" id="btnPrevPage" ${state.projectPath ? "" : "disabled"}>前</button>
-        <span class="badge" id="pageIndicator">${(state.previewPageIndex || 0) + 1} / ${state.pageCount || 1}</span>
-        <button class="btn btn--soft" id="btnNextPage" ${state.projectPath ? "" : "disabled"}>次</button>
-        <button class="btn btn--soft" id="btnTogglePanel">${state.showPanel ? "操作欄:ON" : "操作欄:OFF"}</button>
-      </div>
-    </div>
     ${
       state.projectPath
         ? `<div class="previewImg">
             <img id="previewImg" alt="preview" draggable="false" />
+            <div class="previewHud">
+              <div class="previewHud__left">
+                <span class="badge">ライブプレビュー ${tipIcon(4, "入力した値がPDF画像に重ねて表示されます。ページ切替で別ページも確認できます。")}</span>
+              </div>
+              <div class="previewHud__right">
+                <button class="btn btn--soft" id="btnPrevPage">前</button>
+                <span class="badge" id="pageIndicator">${(state.previewPageIndex || 0) + 1} / ${state.pageCount || 1}</span>
+                <button class="btn btn--soft" id="btnNextPage">次</button>
+                <button class="btn btn--soft" id="btnTogglePanel">${state.showPanel ? "操作欄:ON" : "操作欄:OFF"}</button>
+              </div>
+            </div>
             <canvas id="confetti" class="confetti" aria-hidden="true"></canvas>
             <canvas id="overlay" class="overlay"></canvas>
             ${
@@ -1257,7 +1294,7 @@ function bind() {
   if (btnSave) btnSave.onclick = async () => {
     if (!state.projectPath) return toast("先に案件を開いてください")
     try {
-      const r = await window.pywebview.api.save_current_project()
+      const r = await window.pywebview.api.save_current_project(true)
       state.lastSession = { path: state.projectPath, workerId: state.workerId, projectName: state.projectName }
       saveLocal("inputstudio-last-session", state.lastSession)
       if (r?.filled_pdf) state.lastFilledPdf = r.filled_pdf
@@ -1276,7 +1313,7 @@ function bind() {
     const name = prompt("名前を付けて保存（新しい案件名）", `${name0}-コピー`)
     if (!name) return
     try {
-      const r = await window.pywebview.api.save_project_as(String(name))
+      const r = await window.pywebview.api.save_project_as(String(name), true)
       if (!r?.ok || !r.path) return toast(`保存に失敗: ${r?.error || "unknown"}`)
       const loaded = await window.pywebview.api.load_project(r.path)
       if (!loaded?.ok) return toast("保存した案件を開けませんでした")
@@ -1634,18 +1671,9 @@ function bind() {
         const pl = state.placements?.[fid]
         if (!pl) continue
         if (Number(pl.page || 0) !== page) continue
-        const fs = Number(pl.font_size || 14) || 14
-        const tag = String(pl.tag || "").trim()
-        const v = String((state.values?.[tag] || "")).replaceAll("<br>", "\n")
-        const lines = v ? v.split("\n") : [tag || fid]
-        const longest = Math.max(...lines.map((s) => s.length), 1)
-        const lh = Number(pl.line_height || 1.2) || 1.2
-        const ls = Number(pl.letter_spacing || 0) || 0
-        const wPage = Math.max(42, longest * (fs * 0.62 + ls))
-        const hPage = Math.max(22, lines.length * fs * lh)
-        const x1 = Number(pl.x || 0)
-        const y1 = Number(pl.y || 0)
-        if (pt.x >= x1 - 6 && pt.y >= y1 - 6 && pt.x <= x1 + wPage + 6 && pt.y <= y1 + hPage + 6) {
+        const b = placementBoxOnPage(fid, pl)
+        const m = Math.max(10, (Number(pl.font_size || 14) || 14) * 0.35)
+        if (pt.x >= b.x - m && pt.y >= b.y - m && pt.x <= b.x + b.w + m && pt.y <= b.y + b.h + m) {
           return fid
         }
       }
@@ -2538,6 +2566,29 @@ function openPlacePalette(pt, editFid = null) {
   const tagQuickPane = $("#tagQuickPane")
   const tagSearch = $("#tagSearch")
 
+  // 2つのパレットが重なる場合：操作している方を前面にする
+  const bringToFront = (which) => {
+    if (!card || !tagCard) return
+    const top = 90
+    const under = 89
+    if (which === "tag") {
+      tagCard.style.zIndex = String(top)
+      card.style.zIndex = String(under)
+    } else {
+      card.style.zIndex = String(top)
+      tagCard.style.zIndex = String(under)
+    }
+  }
+  bringToFront("palette")
+  if (card) {
+    card.addEventListener("pointerdown", () => bringToFront("palette"), { passive: true })
+    card.addEventListener("focusin", () => bringToFront("palette"))
+  }
+  if (tagCard) {
+    tagCard.addEventListener("pointerdown", () => bringToFront("tag"), { passive: true })
+    tagCard.addEventListener("focusin", () => bringToFront("tag"))
+  }
+
   // 色パレット（選択式）
   const sw = $("#pSwatches")
   if (sw) {
@@ -2992,19 +3043,11 @@ function drawOverlay() {
     ctx.setLineDash([])
     for (const t of selected) {
       const pl = state.placements[t] || {}
-      const fs = Number(pl.font_size || 14) || 14
-        const tag = String(pl.tag || "").trim()
-        const v = String((state.values?.[tag] || "")).replaceAll("<br>", "\n")
-        const lines = v ? v.split("\n") : [tag || t]
-      const longest = Math.max(...lines.map((s) => s.length), 1)
-      const lh = Number(pl.line_height || 1.2) || 1.2
-      const ls = Number(pl.letter_spacing || 0) || 0
-      const wPage = Math.max(42, longest * (fs * 0.62 + ls))
-      const hPage = Math.max(22, lines.length * fs * lh)
+      const b = placementBoxOnPage(t, pl)
       const x1 = (Number(pl.x || 0) / state.pageW) * iw + ox
       const y1 = (Number(pl.y || 0) / state.pageH) * ih + oy
-      const w1 = (wPage / state.pageW) * iw
-      const h1 = (hPage / state.pageH) * ih
+      const w1 = (b.w / state.pageW) * iw
+      const h1 = (b.h / state.pageH) * ih
       ctx.strokeStyle = "rgba(255,106,162,.95)"
       ctx.lineWidth = 2
       ctx.strokeRect(x1 - 2, y1 - 2, w1 + 4, h1 + 4)
