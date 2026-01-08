@@ -421,16 +421,27 @@ select:focus,.input:focus,.textarea:focus{box-shadow:0 0 0 5px rgba(124,92,255,.
   align-items:center;
   justify-content:space-between;
   gap:10px;
-  padding:10px 10px;
-  border-radius:16px;
-  border:1px solid rgba(255,255,255,.85);
-  background: rgba(255,255,255,.45);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
+  /* 要望: 書類上部が見えないので、HUD自体は完全透過（ぼかし無し） */
+  padding:0;
+  border-radius:0;
+  border:none;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 .previewHud__left{display:flex; gap:8px; align-items:center; flex:1; min-width:0}
 .previewHud__right{display:flex; gap:8px; align-items:center; flex:0 0 auto}
 .previewHud .btn{padding:10px 12px}
+.previewHud .badge{
+  /* バッジも“浮かせる”が、資料を隠しすぎない */
+  background: rgba(255,255,255,.55);
+  border-color: rgba(255,255,255,.72);
+}
+.previewHud .btn{
+  /* ボタンだけが浮いているように（薄め） */
+  background: rgba(255,255,255,.62);
+  border-color: rgba(255,255,255,.72);
+}
 .previewImg img{
   width:100%;
   height:100%;
