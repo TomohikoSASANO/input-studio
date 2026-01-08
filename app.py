@@ -634,10 +634,17 @@ class Api:
 
         writer = PdfWriter()
         for pi, page in enumerate(reader.pages):
-            w_pt = float(page.mediabox.width)
-            h_pt = float(page.mediabox.height)
-            w_px = int(round(w_pt / 72.0 * RENDER_DPI))
-            h_px = int(round(h_pt / 72.0 * RENDER_DPI))
+            # IMPORTANT: Preview coordinates are based on rendered page (PyMuPDF),
+            # which uses the visible page box (CropBox) in most PDFs.
+            # Export must use the same box; otherwise everything shifts (often slightly left/up).
+            media = page.mediabox
+            crop = getattr(page, "cropbox", None) or media
+            w_pt = float(media.width)
+            h_pt = float(media.height)
+            llx = float(getattr(crop, "lower_left", (0, 0))[0])
+            lly = float(getattr(crop, "lower_left", (0, 0))[1])
+            crop_w_pt = float(crop.width)
+            crop_h_pt = float(crop.height)
 
             import io
 
@@ -671,8 +678,9 @@ class Api:
                 color = str(p.get("color") or "#0f172a")
                 line_h = float(p.get("line_height") or 1.2)
                 letter_s_px = float(p.get("letter_spacing") or 0)
-                x_pt = x_px * 72.0 / RENDER_DPI
-                y_top_pt = (h_px - y_px) * 72.0 / RENDER_DPI
+                # Convert from (cropbox top-left) pixel coords -> PDF user space points.
+                x_pt = llx + x_px * 72.0 / RENDER_DPI
+                y_top_pt = lly + crop_h_pt - (y_px * 72.0 / RENDER_DPI)
                 font_name = jp_font if _needs_jp(text) else "Helvetica"
                 fs_pt = float(fs_px) * 72.0 / RENDER_DPI
                 c.setFont(font_name, fs_pt)
