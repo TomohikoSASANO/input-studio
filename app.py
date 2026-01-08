@@ -30,7 +30,25 @@ except Exception:  # pragma: no cover
 
 ROOT = Path(__file__).resolve().parent
 UI_DIR = ROOT / "ui"
-LOCAL = ROOT / "_local_data"
+def _local_root_dir() -> Path:
+    """
+    Persistent storage root.
+
+    IMPORTANT:
+    - Do NOT store under the app folder (dist) because updating/replacing the app
+      would wipe user data.
+    - Use OS user profile location instead.
+    """
+    try:
+        if os.name == "nt":
+            base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or str(Path.home())
+            return (Path(base) / "InputStudio").resolve()
+    except Exception:
+        pass
+    return (Path.home() / ".inputstudio").resolve()
+
+
+LOCAL = _local_root_dir() / "_local_data"
 PROJECTS_DIR = LOCAL / "projects"
 WORKERS_PATH = LOCAL / "workers.json"
 ADMIN_SETTINGS_PATH = LOCAL / "admin_settings.json"
@@ -40,6 +58,22 @@ RENDER_DPI = 150
 
 
 def _ensure_dirs() -> None:
+    # Migrate old portable data (stored under app folder) into the new persistent dir.
+    try:
+        old_local = (ROOT / "_local_data").resolve()
+        if old_local.exists():
+            # Only migrate if new dir looks empty.
+            looks_empty = True
+            try:
+                if (LOCAL / "projects").exists() or (LOCAL / "workers.json").exists():
+                    looks_empty = False
+            except Exception:
+                looks_empty = True
+            if looks_empty:
+                shutil.copytree(old_local, LOCAL, dirs_exist_ok=True)
+    except Exception:
+        pass
+
     LOCAL.mkdir(parents=True, exist_ok=True)
     PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
 
