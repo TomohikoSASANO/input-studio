@@ -1294,13 +1294,10 @@ function bind() {
   if (btnSave) btnSave.onclick = async () => {
     if (!state.projectPath) return toast("先に案件を開いてください")
     try {
-      const r = await window.pywebview.api.save_current_project(true)
+      const r = await window.pywebview.api.save_current_project()
       state.lastSession = { path: state.projectPath, workerId: state.workerId, projectName: state.projectName }
       saveLocal("inputstudio-last-session", state.lastSession)
-      if (r?.filled_pdf) state.lastFilledPdf = r.filled_pdf
-      if (r?.exports_dir) state.lastExportDir = r.exports_dir
-      toast("案件を保存しました（提出PDFも保存）")
-      render()
+      toast("案件を保存しました")
     } catch (e) {
       toast(`保存に失敗しました: ${e}`)
     }
@@ -1313,7 +1310,7 @@ function bind() {
     const name = prompt("名前を付けて保存（新しい案件名）", `${name0}-コピー`)
     if (!name) return
     try {
-      const r = await window.pywebview.api.save_project_as(String(name), true)
+      const r = await window.pywebview.api.save_project_as(String(name))
       if (!r?.ok || !r.path) return toast(`保存に失敗: ${r?.error || "unknown"}`)
       const loaded = await window.pywebview.api.load_project(r.path)
       if (!loaded?.ok) return toast("保存した案件を開けませんでした")
@@ -1328,9 +1325,7 @@ function bind() {
       state.uiMode = loaded.ui_mode || state.uiMode
       state.lastSession = { path: r.path, workerId: state.workerId, projectName: state.projectName }
       saveLocal("inputstudio-last-session", state.lastSession)
-      if (r?.filled_pdf) state.lastFilledPdf = r.filled_pdf
-      if (r?.exports_dir) state.lastExportDir = r.exports_dir
-      toast("名前を付けて保存しました（提出PDFも保存）")
+      toast("名前を付けて保存しました")
       pulse()
       render()
       await queuePreview()
