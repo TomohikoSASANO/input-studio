@@ -588,18 +588,44 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def save_current_project(self) -> dict[str, Any]:
+    def save_current_project(self, make_filled_pdf: bool = False) -> dict[str, Any]:
         if not self._project and not self._ensure_project_loaded():
             return {"ok": False, "error": "no_project"}
         try:
             self._project.data["ui_mode"] = self._ui_mode
             self._project.data["updated_at"] = _now_iso()
             _write_json(self._project.path, self._project.data)
-            return {"ok": True}
+            filled_pdf = None
+            pdf_path = None
+            if bool(make_filled_pdf):
+                out_dir = (self._project.path.parent / "exports").resolve()
+                stamp = time.strftime("%Y%m%d-%H%M%S")
+                proj = _safe_name(str(self._project.data.get("project") or "project"))
+                who = _safe_name(str(self._working_worker_id or "worker"))
+                out_pdf = out_dir / f"autosave-{proj}-{stamp}-{who}.pdf"
+                self._export_filled_pdf(out_pdf)
+                latest = (self._project.path.parent / "template_filled_latest.pdf").resolve()
+                try:
+                    shutil.copy2(out_pdf, latest)
+                except Exception:
+                    try:
+                        self._export_filled_pdf(latest)
+                    except Exception:
+                        pass
+                filled_pdf = str(latest if latest else out_pdf.resolve())
+                pdf_path = str(out_pdf.resolve())
+            return {
+                "ok": True,
+                "path": str(self._project.path),
+                "project_dir": str(self._project.path.parent),
+                "exports_dir": str((self._project.path.parent / "exports").resolve()),
+                "pdf": pdf_path,
+                "filled_pdf": filled_pdf,
+            }
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def save_project_as(self, name: str) -> dict[str, Any]:
+    def save_project_as(self, name: str, make_filled_pdf: bool = True) -> dict[str, Any]:
         """
         Save as a new project (duplicate current project to a new folder) and load it.
         """
@@ -624,7 +650,33 @@ class Api:
             # Load newly saved project
             self._last_project_path = str(proj_json.resolve())
             self.load_project(self._last_project_path)
-            return {"ok": True, "path": self._last_project_path}
+            filled_pdf = None
+            pdf_path = None
+            if bool(make_filled_pdf) and self._project:
+                out_dir = (Path(self._last_project_path).resolve().parent / "exports").resolve()
+                stamp = time.strftime("%Y%m%d-%H%M%S")
+                proj = _safe_name(str(self._project.data.get("project") or "project"))
+                who = _safe_name(str(self._working_worker_id or "worker"))
+                out_pdf = out_dir / f"autosave-{proj}-{stamp}-{who}.pdf"
+                self._export_filled_pdf(out_pdf)
+                latest = (Path(self._last_project_path).resolve().parent / "template_filled_latest.pdf").resolve()
+                try:
+                    shutil.copy2(out_pdf, latest)
+                except Exception:
+                    try:
+                        self._export_filled_pdf(latest)
+                    except Exception:
+                        pass
+                filled_pdf = str(latest if latest else out_pdf.resolve())
+                pdf_path = str(out_pdf.resolve())
+            return {
+                "ok": True,
+                "path": self._last_project_path,
+                "project_dir": str(Path(self._last_project_path).resolve().parent),
+                "exports_dir": str((Path(self._last_project_path).resolve().parent / "exports").resolve()),
+                "pdf": pdf_path,
+                "filled_pdf": filled_pdf,
+            }
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -1042,128 +1094,154 @@ class Api:
         # Route to page renderer so cache/prefetch & PyMuPDF path applies.
         return self.get_preview_png_base64_page(page_index)
 
+    def _export_filled_pdf(self, out_pdf: Path) -> None:
+        """Render current project values onto template.pdf and write to out_pdf."""
+        if not self._project and not self._ensure_project_loaded():
+            raise RuntimeError("no_project")
+        assert self._project is not None
+
+        pdf_in = self._pdf_path()
+        reader = PdfReader(str(pdf_in))
+        placements = dict(self._project.data.get("placements") or {})
+        values = dict(self._project.data.get("values") or {})
+
+        # Ensure Japanese-capable font for PDF export.
+        try:
+            from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+
+            pdfmetrics.registerFont(UnicodeCIDFont("HeiseiKakuGo-W5"))
+            jp_font = "HeiseiKakuGo-W5"
+        except Exception:
+            jp_font = "Helvetica"
+
+        import re
+
+        def _needs_jp(s: str) -> bool:
+            return bool(re.search(r"[\u3040-\u30ff\u3400-\u9fff\u3000-\u303f\uff00-\uffef]", s or ""))
+
+        writer = PdfWriter()
+        for pi, page in enumerate(reader.pages):
+            # Use CropBox like preview, and match preview pixel rounding.
+            media = page.mediabox
+            crop = getattr(page, "cropbox", None) or media
+            w_pt = float(media.width)
+            h_pt = float(media.height)
+            llx = float(getattr(crop, "lower_left", (0, 0))[0])
+            lly = float(getattr(crop, "lower_left", (0, 0))[1])
+            crop_w_pt = float(crop.width)
+            crop_h_pt = float(crop.height)
+            crop_w_px = max(1, int(round(crop_w_pt / 72.0 * RENDER_DPI)))
+            crop_h_px = max(1, int(round(crop_h_pt / 72.0 * RENDER_DPI)))
+
+            import io
+
+            packet = io.BytesIO()
+            c = canvas.Canvas(packet, pagesize=(w_pt, h_pt))
+            # Ensure overlay has at least one page.
+            try:
+                c.setFont("Helvetica", 1)
+                c.setFillColor(HexColor("#ffffff"))
+                c.drawString(-10000, -10000, " ")
+            except Exception:
+                pass
+
+            for _, p in placements.items():
+                if not isinstance(p, dict):
+                    continue
+                if int(p.get("page") or 0) != pi:
+                    continue
+                tag = str(p.get("tag") or "").strip()
+                if not tag:
+                    continue
+                text = str(values.get(tag) or "").replace("<br>", "\n")
+                if not text.strip():
+                    continue
+
+                x_px = float(p.get("x") or 0)
+                y_px = float(p.get("y") or 0)
+                fs_px = float(p.get("font_size") or 14)
+                color = str(p.get("color") or "#0f172a")
+                line_h = float(p.get("line_height") or 1.2)
+                letter_s_px = float(p.get("letter_spacing") or 0)
+
+                x_pt = llx + (x_px / float(crop_w_px)) * crop_w_pt
+                y_top_pt = lly + crop_h_pt - ((y_px / float(crop_h_px)) * crop_h_pt)
+
+                font_name = jp_font if _needs_jp(text) else "Helvetica"
+                fs_pt = float(fs_px) * 72.0 / RENDER_DPI
+                c.setFont(font_name, fs_pt)
+                try:
+                    c.setFillColor(HexColor(color))
+                except Exception:
+                    c.setFillColor(HexColor("#0f172a"))
+
+                # baseline adjust
+                try:
+                    ascent = float(pdfmetrics.getAscent(font_name) or 0) / 1000.0 * fs_pt
+                except Exception:
+                    ascent = fs_pt * 0.8
+                y_base0 = y_top_pt - ascent - (0.08 * fs_pt)
+                letter_s_pt = float(letter_s_px) * 72.0 / RENDER_DPI
+
+                def _draw_line_with_spacing(x0: float, y0: float, s: str) -> None:
+                    if not letter_s_pt:
+                        c.drawString(x0, y0, s)
+                        return
+                    cx = x0
+                    for ch in s:
+                        c.drawString(cx, y0, ch)
+                        try:
+                            w = pdfmetrics.stringWidth(ch, font_name, fs_pt)
+                        except Exception:
+                            w = fs_pt * 0.62
+                        cx += float(w) + float(letter_s_pt)
+
+                for line_idx, line in enumerate(text.splitlines() or [""]):
+                    y_line = y_base0 - (fs_pt * line_h) * line_idx
+                    _draw_line_with_spacing(x_pt, y_line, line)
+
+            c.save()
+            packet.seek(0)
+            overlay = PdfReader(packet).pages[0]
+            page.merge_page(overlay)
+            writer.add_page(page)
+
+        out_pdf.parent.mkdir(parents=True, exist_ok=True)
+        with out_pdf.open("wb") as f:
+            writer.write(f)
+
     def finish(self) -> dict[str, Any]:
         if not self._project and not self._ensure_project_loaded():
             return {"ok": False, "error": "no_project"}
         try:
-            pdf_in = self._pdf_path()
-            reader = PdfReader(str(pdf_in))
-            placements = dict(self._project.data.get("placements") or {})
-            values = dict(self._project.data.get("values") or {})
-
-            # Ensure Japanese-capable font for PDF export.
-            # Use built-in CID font so we don't depend on external font files.
-            try:
-                from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-
-                pdfmetrics.registerFont(UnicodeCIDFont("HeiseiKakuGo-W5"))
-                jp_font = "HeiseiKakuGo-W5"
-            except Exception:
-                jp_font = "Helvetica"
-
-            import re
-
-            def _needs_jp(s: str) -> bool:
-                return bool(re.search(r"[\u3040-\u30ff\u3400-\u9fff\u3000-\u303f\uff00-\uffef]", s or ""))
-
             out_dir = self._project.path.parent / "exports"
             out_dir.mkdir(parents=True, exist_ok=True)
-            out_pdf = out_dir / f"filled-{int(time.time())}.pdf"
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            proj = _safe_name(str(self._project.data.get("project") or "project"))
+            who = _safe_name(str(self._working_worker_id or "worker"))
+            base = f"{proj}-{stamp}-{who}"
+            out_pdf = out_dir / f"{base}.pdf"
+            self._export_filled_pdf(out_pdf)
 
-            writer = PdfWriter()
-            for pi, page in enumerate(reader.pages):
-                # Use the same visible box as preview rendering (CropBox in most PDFs).
-                # Also, match preview pixel rounding to avoid tiny systematic shifts.
-                media = page.mediabox
-                crop = getattr(page, "cropbox", None) or media
-                w_pt = float(media.width)
-                h_pt = float(media.height)
-                llx = float(getattr(crop, "lower_left", (0, 0))[0])
-                lly = float(getattr(crop, "lower_left", (0, 0))[1])
-                crop_w_pt = float(crop.width)
-                crop_h_pt = float(crop.height)
-                crop_w_px = max(1, int(round(crop_w_pt / 72.0 * RENDER_DPI)))
-                crop_h_px = max(1, int(round(crop_h_pt / 72.0 * RENDER_DPI)))
-
-                import io
-
-                packet = io.BytesIO()
-                c = canvas.Canvas(packet, pagesize=(w_pt, h_pt))
-                # Ensure the overlay PDF has at least one page even if nothing is drawn.
+            latest = (self._project.path.parent / "template_filled_latest.pdf").resolve()
+            try:
+                shutil.copy2(out_pdf, latest)
+            except Exception:
                 try:
-                    c.setFont("Helvetica", 1)
-                    c.setFillColor(HexColor("#ffffff"))
-                    c.drawString(-10000, -10000, " ")
+                    self._export_filled_pdf(latest)
                 except Exception:
                     pass
-                for _, p in placements.items():
-                    if not isinstance(p, dict):
-                        continue
-                    if int(p.get("page") or 0) != pi:
-                        continue
-                    tag = str(p.get("tag") or "").strip()
-                    if not tag:
-                        continue
-                    text = str(values.get(tag) or "").replace("<br>", "\n")
-                    if not text.strip():
-                        continue
-                    x_px = float(p.get("x") or 0)
-                    y_px = float(p.get("y") or 0)
-                    fs_px = float(p.get("font_size") or 14)
-                    color = str(p.get("color") or "#0f172a")
-                    line_h = float(p.get("line_height") or 1.2)
-                    letter_s_px = float(p.get("letter_spacing") or 0)
-                    # px (cropbox top-left) -> pt (PDF user space)
-                    x_pt = llx + (x_px / float(crop_w_px)) * crop_w_pt
-                    y_top_pt = lly + crop_h_pt - ((y_px / float(crop_h_px)) * crop_h_pt)
-                    font_name = jp_font if _needs_jp(text) else "Helvetica"
-                    # font sizes are stored in preview-pixels; convert to points
-                    fs_pt = float(fs_px) * 72.0 / RENDER_DPI
-                    c.setFont(font_name, fs_pt)
-                    try:
-                        c.setFillColor(HexColor(color))
-                    except Exception:
-                        c.setFillColor(HexColor("#0f172a"))
 
-                    # ReportLab uses baseline Y; preview uses top-left Y.
-                    try:
-                        ascent = float(pdfmetrics.getAscent(font_name) or 0) / 1000.0 * fs_pt
-                    except Exception:
-                        ascent = fs_pt * 0.8
-                    y_base0 = y_top_pt - ascent
-                    # tiny empirical adjustment (font metric differences)
-                    y_base0 = y_base0 - (0.08 * fs_pt)
-                    letter_s_pt = float(letter_s_px) * 72.0 / RENDER_DPI
-
-                    def _draw_line_with_spacing(x0: float, y0: float, s: str) -> None:
-                        if not letter_s_pt:
-                            c.drawString(x0, y0, s)
-                            return
-                        cx = x0
-                        for ch in s:
-                            c.drawString(cx, y0, ch)
-                            try:
-                                w = pdfmetrics.stringWidth(ch, font_name, fs_pt)
-                            except Exception:
-                                w = fs_pt * 0.62
-                            cx += float(w) + float(letter_s_pt)
-
-                    for line_idx, line in enumerate(text.splitlines() or [""]):
-                        y_line = y_base0 - (fs_pt * line_h) * line_idx
-                        _draw_line_with_spacing(x_pt, y_line, line)
-                c.save()
-                packet.seek(0)
-                overlay = PdfReader(packet).pages[0]
-                page.merge_page(overlay)
-                writer.add_page(page)
-
-            with out_pdf.open("wb") as f:
-                writer.write(f)
-
-            out_zip = out_dir / f"filled-{int(time.time())}.zip"
+            out_zip = out_dir / f"{base}.zip"
             with zipfile.ZipFile(out_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
                 z.write(out_pdf, arcname=out_pdf.name)
-            return {"ok": True, "dir": str(out_dir.resolve()), "zip": str(out_zip.resolve())}
+            return {
+                "ok": True,
+                "dir": str(out_dir.resolve()),
+                "zip": str(out_zip.resolve()),
+                "pdf": str(out_pdf.resolve()),
+                "filled_pdf": str(latest if latest else out_pdf.resolve()),
+            }
         except Exception as e:
             return {"ok": False, "error": str(e)}
 

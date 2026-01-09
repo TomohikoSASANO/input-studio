@@ -349,7 +349,7 @@ async function applyProjectSnapshot(snap, { save = true } = {}) {
   state.selectKeys = state.selectKeys.filter((fid) => state.placements?.[fid])
   if (save && window.pywebview?.api?.set_project_payload) {
     await window.pywebview.api.set_project_payload({ tags: state.tags, values: state.values, placements: state.placements })
-    await window.pywebview.api.save_current_project?.()
+    await window.pywebview.api.save_current_project?.(false)
   }
   render()
 }
@@ -1049,7 +1049,7 @@ function bind() {
       state.selectKeys = pasted
       pushUndo(before)
       await window.pywebview.api.set_project_payload?.({ tags: state.tags, values: state.values, placements: state.placements })
-      await window.pywebview.api.save_current_project?.()
+      await window.pywebview.api.save_current_project?.(false)
       showPage(state.previewPageIndex || 0)
       render()
       toast(`貼り付け: ${pasted.length}件`)
@@ -1070,7 +1070,7 @@ function bind() {
         // fallback: try to persist full payload
         await window.pywebview.api.set_project_payload?.({ tags: state.tags, values: state.values, placements: state.placements })
       }
-      await window.pywebview.api.save_current_project?.()
+      await window.pywebview.api.save_current_project?.(false)
       showPage(state.previewPageIndex || 0)
       render()
       toast(`削除: ${del.length}件`)
@@ -1096,7 +1096,7 @@ function bind() {
       }
       pushUndo(before)
       await window.pywebview.api.set_project_payload?.({ tags: state.tags, values: state.values, placements: state.placements })
-      await window.pywebview.api.save_current_project?.()
+      await window.pywebview.api.save_current_project?.(false)
       drawOverlay()
       showPage(state.previewPageIndex || 0)
       return
@@ -1294,10 +1294,13 @@ function bind() {
   if (btnSave) btnSave.onclick = async () => {
     if (!state.projectPath) return toast("先に案件を開いてください")
     try {
-      const r = await window.pywebview.api.save_current_project()
+      const r = await window.pywebview.api.save_current_project(true)
       state.lastSession = { path: state.projectPath, workerId: state.workerId, projectName: state.projectName }
       saveLocal("inputstudio-last-session", state.lastSession)
-      toast("案件を保存しました")
+      if (r?.filled_pdf) state.lastFilledPdf = r.filled_pdf
+      if (r?.exports_dir) state.lastExportDir = r.exports_dir
+      toast("案件を保存しました（PDFも生成）")
+      render()
     } catch (e) {
       toast(`保存に失敗しました: ${e}`)
     }
@@ -1310,7 +1313,7 @@ function bind() {
     const name = prompt("名前を付けて保存（新しい案件名）", `${name0}-コピー`)
     if (!name) return
     try {
-      const r = await window.pywebview.api.save_project_as(String(name))
+      const r = await window.pywebview.api.save_project_as(String(name), true)
       if (!r?.ok || !r.path) return toast(`保存に失敗: ${r?.error || "unknown"}`)
       const loaded = await window.pywebview.api.load_project(r.path)
       if (!loaded?.ok) return toast("保存した案件を開けませんでした")
@@ -1325,7 +1328,9 @@ function bind() {
       state.uiMode = loaded.ui_mode || state.uiMode
       state.lastSession = { path: r.path, workerId: state.workerId, projectName: state.projectName }
       saveLocal("inputstudio-last-session", state.lastSession)
-      toast("名前を付けて保存しました")
+      if (r?.filled_pdf) state.lastFilledPdf = r.filled_pdf
+      if (r?.exports_dir) state.lastExportDir = r.exports_dir
+      toast("名前を付けて保存しました（PDFも生成）")
       pulse()
       render()
       await queuePreview()
@@ -1776,7 +1781,7 @@ function bind() {
       try {
         if (window.pywebview?.api?.set_project_payload) {
           await window.pywebview.api.set_project_payload({ tags: state.tags, values: state.values, placements: state.placements })
-          await window.pywebview.api.save_current_project?.()
+          await window.pywebview.api.save_current_project?.(false)
         } else {
           // fallback
           for (const k of state.selectKeys) {
@@ -1817,7 +1822,7 @@ function bind() {
       state.placements[fid] = { tag, page: state.previewPageIndex || 0, x, y, font_size: 14, color: "#0f172a", line_height: 1.2, letter_spacing: 0 }
       state.selectKeys = [fid]
       state.idx = state.tags.indexOf(tag)
-      await window.pywebview.api.save_current_project()
+      await window.pywebview.api.save_current_project(false)
       state.addMode = false
       enableOverlayPointer(false)
       toast(`追加しました：${tag}`)
@@ -2295,7 +2300,7 @@ async function openDesignModal() {
     await focusDesignKey()
   }
   $("#dSave").onclick = async () => {
-    const r = await window.pywebview.api.save_current_project()
+    const r = await window.pywebview.api.save_current_project(false)
     if (!r.ok) return alert(`保存に失敗: ${r.error || "unknown"}`)
     toast("保存しました")
     pulse()
@@ -2935,7 +2940,7 @@ function openPlacePalette(pt, editFid = null) {
       }
       state.selectKeys = fid ? [fid] : []
       state.idx = Math.max(0, state.tags.indexOf(tag))
-      await window.pywebview.api.save_current_project()
+      await window.pywebview.api.save_current_project(false)
       await showPage(page)
       render()
       close()
@@ -2955,7 +2960,7 @@ function openPlacePalette(pt, editFid = null) {
     pushUndo(before)
     if (window.pywebview?.api?.delete_elements) await window.pywebview.api.delete_elements?.([fid])
     else await window.pywebview.api.set_project_payload?.({ tags: state.tags, values: state.values, placements: state.placements })
-    await window.pywebview.api.save_current_project?.()
+    await window.pywebview.api.save_current_project?.(false)
     showPage(state.previewPageIndex || 0)
     render()
     close()
