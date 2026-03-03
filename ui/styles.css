@@ -108,13 +108,13 @@ body{
 @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(18px)}}
 
 .layout{
-  /* 最大化時に下が隠れないように、padding分を差し引いた高さにする */
-  height: calc(100dvh - 40px);
-  height: calc(100vh - 40px);
+  /* 画面高を最大限使い、下端の余白を減らす */
+  height: calc(100dvh - 12px);
+  height: calc(100vh - 12px);
   display:grid;
-  grid-template-columns: 520px 1fr;
-  gap:18px;
-  padding:20px;
+  grid-template-columns: clamp(280px, 26vw, 400px) 1fr;
+  gap:12px;
+  padding:6px;
 }
 .layout--nopanel{
   grid-template-columns: 1fr;
@@ -131,14 +131,14 @@ body{
   overflow:hidden;
   position:relative;
 }
-.panel{padding:18px; display:flex; flex-direction:column; gap:14px; min-height:0; overflow:auto}
+.panel{padding:14px; display:flex; flex-direction:column; gap:12px; min-height:0; overflow:auto}
 .stage{
-  padding:18px;
+  padding:10px;
   display:grid;
   grid-template-columns:1fr;
   gap:12px;
   min-height:0;
-  overflow:auto;
+  overflow:hidden;
 }
 .stage--split{
   /* タグ欄は「細め」固定。大画面でも取りすぎない */
@@ -147,6 +147,8 @@ body{
 }
 .stage--nosplit{
   grid-template-columns:1fr;
+  grid-template-rows:1fr;
+  align-items:stretch;
 }
 .tagPane{
   border:1px solid rgba(255,255,255,.6);
@@ -333,6 +335,10 @@ select:focus,.input:focus,.textarea:focus{box-shadow:0 0 0 5px rgba(124,92,255,.
   background: transparent;
   box-shadow:none;
 }
+.btn.is-selected{
+  border-color: rgba(124,92,255,.38);
+  box-shadow: 0 0 0 5px rgba(124,92,255,.14), 0 10px 24px rgba(17,24,39,.10);
+}
 .btn:disabled{opacity:.45; cursor:not-allowed; box-shadow:none}
 
 .status{display:flex; flex-direction:column; gap:6px}
@@ -386,7 +392,8 @@ select:focus,.input:focus,.textarea:focus{box-shadow:0 0 0 5px rgba(124,92,255,.
 
 .previewTop{display:flex; gap:10px; align-items:center}
 .previewPlaceholder{
-  min-height:320px;
+  min-height:0;
+  height:100%;
   border:1px dashed var(--stroke);
   border-radius:16px;
   display:flex;
@@ -397,6 +404,8 @@ select:focus,.input:focus,.textarea:focus{box-shadow:0 0 0 5px rgba(124,92,255,.
 }
 .previewImg{
   flex:1;
+  height:100%;
+  min-height:0;
   border-radius: var(--r2);
   border:1px solid rgba(255,255,255,.9);
   background: rgba(255,255,255,.55);
@@ -408,8 +417,8 @@ select:focus,.input:focus,.textarea:focus{box-shadow:0 0 0 5px rgba(124,92,255,.
   overflow:hidden;
 }
 .previewImg{
-  /* 上部ボタンを枠内オーバーレイにした分、縦を大きく */
-  min-height: min(80vh, 920px);
+  /* 高さは親コンテナに追従 */
+  min-height:0;
 }
 .previewHud{
   position:absolute;
@@ -451,6 +460,18 @@ select:focus,.input:focus,.textarea:focus{box-shadow:0 0 0 5px rgba(124,92,255,.
   -webkit-user-select: none;
   user-select: none;
   pointer-events: none; /* 画像ドラッグを完全に殺して overlay に渡す */
+}
+.previewScale{
+  position:absolute;
+  inset:0;
+  transform-origin:50% 50%;
+  will-change:transform;
+}
+.previewScale img{
+  width:100%;
+  height:100%;
+  display:block;
+  object-fit:contain;
 }
 .confetti{position:absolute; top:0; left:0; right:0; bottom:0; width:100%; height:100%; display:block; pointer-events:none; z-index:3}
 .overlay{position:absolute; top:0; left:0; right:0; bottom:0; width:100%; height:100%; display:block; pointer-events:none; z-index:4}
@@ -511,6 +532,69 @@ select:focus,.input:focus,.textarea:focus{box-shadow:0 0 0 5px rgba(124,92,255,.
   box-shadow: 0 28px 90px rgba(17,24,39,.18);
   padding:16px;
   animation: modalIn .24s ease;
+}
+
+.pageOpsBoard{
+  margin-top:12px;
+  display:grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap:10px;
+  max-height: 56vh;
+  overflow:auto;
+  padding:4px;
+}
+@media (max-width: 1200px){
+  .pageOpsBoard{grid-template-columns: repeat(3, minmax(0, 1fr))}
+}
+@media (max-width: 900px){
+  .pageOpsBoard{grid-template-columns: repeat(2, minmax(0, 1fr))}
+}
+.pageCard{
+  border:1px solid rgba(17,24,39,.12);
+  background: rgba(255,255,255,.82);
+  border-radius:12px;
+  padding:8px;
+  cursor:grab;
+  box-shadow: 0 8px 18px rgba(17,24,39,.08);
+  -webkit-user-select:none;
+  user-select:none;
+}
+.pageCard:active{cursor:grabbing}
+.pageCard.is-current{
+  border-color: rgba(124,92,255,.7);
+  box-shadow: 0 10px 24px rgba(124,92,255,.22);
+}
+.pageCard.is-over{
+  outline:2px dashed rgba(239,68,68,.75);
+  outline-offset:2px;
+}
+.pageCard__thumb{
+  width:100%;
+  aspect-ratio: 1;
+  border-radius:8px;
+  overflow:hidden;
+  background:#f8fafc;
+  border:1px solid rgba(15,23,42,.08);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.pageCard__thumb img{
+  width:100%;
+  height:100%;
+  object-fit:contain;
+  pointer-events:none;
+  -webkit-user-drag:none;
+}
+.pageCard__noimg{
+  font-size:12px;
+  color:var(--muted);
+}
+.pageCard__meta{
+  margin-top:8px;
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
 }
 @keyframes modalIn{from{transform:translate(-50%,-48%) scale(.98); opacity:.0}to{transform:translate(-50%,-50%) scale(1); opacity:1}}
 .modal__title{font-weight:900; font-size:18px; margin-bottom:10px}

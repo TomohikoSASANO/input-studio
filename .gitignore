@@ -9,6 +9,9 @@ _local_data/
 # Build outputs
 build/
 dist/
+build_rebuild/
+dist_rebuild/
+*.zip
 
 # OS / editor
 .DS_Store

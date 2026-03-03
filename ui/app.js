@@ -1,4 +1,5 @@
 const $ = (sel) => document.querySelector(sel)
+const DEFAULT_LETTER_SPACING = 1.2
 
 // --- Web demo mode (GitHub Pages) ------------------------------------------
 // GitHub上で「実画面レビュー」を回すため、pywebviewが無い環境では
@@ -26,6 +27,8 @@ const $ = (sel) => document.querySelector(sel)
     tags: [],
     values: {},
     placements: {}, // fid -> {tag,page,x,y,font_size,...}
+    defaultFontSize: 14,
+    viewZoom: 1.0,
   }
 
   const makeSvgDataUrl = (pageIndex) => {
@@ -68,7 +71,27 @@ const $ = (sel) => document.querySelector(sel)
 
   const api = {
     async get_admin_settings() {
-      return { ok: true, settings: { ui_mode: demo.uiMode } }
+      return {
+        ok: true,
+        settings: {
+          ui_mode: demo.uiMode,
+          default_font_size: Number(demo.defaultFontSize || 14) || 14,
+          view_zoom: Number(demo.viewZoom || 1.0) || 1.0,
+        },
+      }
+    },
+    async update_admin_settings(patch) {
+      const p = patch && typeof patch === "object" ? patch : {}
+      if (p.default_font_size != null) demo.defaultFontSize = Number(p.default_font_size || 14) || 14
+      if (p.view_zoom != null) demo.viewZoom = Number(p.view_zoom || 1.0) || 1.0
+      return {
+        ok: true,
+        settings: {
+          ui_mode: demo.uiMode,
+          default_font_size: Number(demo.defaultFontSize || 14) || 14,
+          view_zoom: Number(demo.viewZoom || 1.0) || 1.0,
+        },
+      }
     },
     async get_workers() {
       return {
@@ -116,6 +139,69 @@ const $ = (sel) => document.querySelector(sel)
       demo.pageCount = Math.max(1, Number(demo.pageCount || 1) + 1)
       return { ok: true, page_count: demo.pageCount }
     },
+    async copy_page_with_elements(page_index) {
+      const idx = Math.max(0, Math.min(Math.max(1, Number(demo.pageCount || 1)) - 1, Number(page_index || 0)))
+      const out = {}
+      for (const [fid, pl] of Object.entries(demo.placements || {})) {
+        if (!pl || typeof pl !== "object") continue
+        const page = Number(pl.page || 0)
+        const next = { ...pl }
+        if (page > idx) next.page = page + 1
+        out[fid] = next
+        if (page === idx) {
+          const nf = `f_${Date.now().toString(16)}_${Math.random().toString(16).slice(2, 8)}`
+          out[nf] = { ...pl, page: idx + 1 }
+        }
+      }
+      demo.placements = out
+      demo.pageCount = Math.max(1, Number(demo.pageCount || 1) + 1)
+      return { ok: true, page_count: demo.pageCount, page_index: idx + 1, placements: demo.placements }
+    },
+    async delete_page_from_project(page_index) {
+      const total = Math.max(1, Number(demo.pageCount || 1))
+      if (total <= 1) return { ok: false, error: "cannot_delete_last_page" }
+      const idx = Math.max(0, Math.min(total - 1, Number(page_index || 0)))
+      const out = {}
+      for (const [fid, pl] of Object.entries(demo.placements || {})) {
+        if (!pl || typeof pl !== "object") continue
+        const page = Number(pl.page || 0)
+        if (page === idx) continue
+        out[fid] = { ...pl, page: page > idx ? page - 1 : page }
+      }
+      demo.placements = out
+      demo.pageCount = Math.max(1, total - 1)
+      return {
+        ok: true,
+        page_count: demo.pageCount,
+        page_index: Math.max(0, Math.min(demo.pageCount - 1, idx)),
+        tags: demo.tags,
+        values: demo.values,
+        placements: demo.placements,
+      }
+    },
+    async reorder_pages(order) {
+      const total = Math.max(1, Number(demo.pageCount || 1))
+      if (!Array.isArray(order) || order.length !== total) return { ok: false, error: "invalid_order" }
+      const norm = order.map((x) => Number(x))
+      if (norm.some((x) => !Number.isFinite(x))) return { ok: false, error: "invalid_order" }
+      const set = new Set(norm)
+      if (set.size !== total) return { ok: false, error: "invalid_order" }
+      const min = Math.min(...norm)
+      const max = Math.max(...norm)
+      if (min < 0 || max >= total) return { ok: false, error: "invalid_order" }
+      const oldToNew = {}
+      norm.forEach((oldIdx, newIdx) => {
+        oldToNew[Number(oldIdx)] = Number(newIdx)
+      })
+      const out = {}
+      for (const [fid, pl] of Object.entries(demo.placements || {})) {
+        if (!pl || typeof pl !== "object") continue
+        const oldPage = Number(pl.page || 0)
+        out[fid] = { ...pl, page: Number(oldToNew[oldPage] ?? oldPage) }
+      }
+      demo.placements = out
+      return { ok: true, page_count: demo.pageCount, placements: demo.placements }
+    },
     async set_ui_mode(mode) {
       demo.uiMode = String(mode || "worker")
       return { ok: true }
@@ -149,7 +235,7 @@ const $ = (sel) => document.querySelector(sel)
         font_size: Number(font_size || 14),
         color: "#0f172a",
         line_height: 1.2,
-        letter_spacing: 0,
+        letter_spacing: DEFAULT_LETTER_SPACING,
       }
       return { ok: true, fid, tag: t }
     },
@@ -283,7 +369,12 @@ const state = {
   showPanel: true,
   pageLocked: false,
   lastFilledPdf: null,
+  lastReportPdf: null,
   lastExportDir: null,
+  defaultFontSize: 14,
+  viewZoom: 1.0,
+  viewPanX: 0,
+  viewPanY: 0,
 }
 
 state.history = loadLocal("inputstudio-history", [])
@@ -327,6 +418,33 @@ function getRenderedContentRect(imgEl, pageW, pageH) {
     width: dw,
     height: dh,
   }
+}
+
+function clampNum(v, minV, maxV) {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return minV
+  return Math.max(minV, Math.min(maxV, n))
+}
+
+function applyPreviewTransform() {
+  const sc = $("#previewScale")
+  if (!sc) return
+  const z = clampNum(state.viewZoom || 1, 0.5, 3.0)
+  const tx = Number(state.viewPanX || 0) || 0
+  const ty = Number(state.viewPanY || 0) || 0
+  sc.style.transform = `translate(${tx}px, ${ty}px) scale(${z})`
+  const zi = $("#zoomIndicator")
+  if (zi) zi.textContent = `${Math.round(z * 100)}%`
+}
+
+async function setViewZoom(nextZoom, { persist = true } = {}) {
+  state.viewZoom = clampNum(nextZoom, 0.5, 3.0)
+  applyPreviewTransform()
+  drawOverlay()
+  if (!persist) return
+  try {
+    await window.pywebview?.api?.update_admin_settings?.({ view_zoom: state.viewZoom })
+  } catch {}
 }
 
 function deepClone(obj) {
@@ -389,7 +507,8 @@ function isWideChar(ch) {
 function placementBoxOnPage(fid, pl) {
   const fs = Number(pl?.font_size || 14) || 14
   const lh = Number(pl?.line_height || 1.2) || 1.2
-  const ls = Number(pl?.letter_spacing || 0) || 0
+  const ls = Number(pl?.letter_spacing ?? DEFAULT_LETTER_SPACING) || DEFAULT_LETTER_SPACING
+  const writingMode = String(pl?.writing_mode || "horizontal")
   const tag = String(pl?.tag || "").trim()
   const v = String((state.values?.[tag] || "")).replaceAll("<br>", "\n")
   const lines = (v ? v.split("\n") : []).filter((s) => s != null)
@@ -397,18 +516,33 @@ function placementBoxOnPage(fid, pl) {
 
   const padX = Math.max(8, fs * 0.35)
   const padY = Math.max(6, fs * 0.25)
-  let maxW = 0
-  for (const line of drawLines) {
-    const s = String(line || "")
-    let w = 0
-    for (const ch of s) {
-      w += (isWideChar(ch) ? fs * 1.0 : fs * 0.62)
+
+  let wPage = 42
+  let hPage = 22
+  if (writingMode === "vertical") {
+    // splitlines => columns (right-to-left)
+    const cols = drawLines
+    const maxChars = Math.max(1, ...cols.map((s) => String(s || "").length))
+    const colCount = Math.max(1, cols.length)
+    const stepY = fs * lh + ls
+    const stepX = fs * 1.10 + ls
+    hPage = Math.max(22, maxChars * stepY + padY * 2)
+    wPage = Math.max(32, colCount * stepX + padX * 2)
+  } else {
+    let maxW = 0
+    for (const line of drawLines) {
+      const s = String(line || "")
+      let w = 0
+      for (const ch of s) {
+        w += (isWideChar(ch) ? fs * 1.0 : fs * 0.62)
+      }
+      if (s.length > 1) w += (s.length - 1) * ls
+      maxW = Math.max(maxW, w)
     }
-    if (s.length > 1) w += (s.length - 1) * ls
-    maxW = Math.max(maxW, w)
+    wPage = Math.max(42, maxW + padX * 2)
+    hPage = Math.max(22, drawLines.length * fs * lh + padY * 2)
   }
-  const wPage = Math.max(42, maxW + padX * 2)
-  const hPage = Math.max(22, drawLines.length * fs * lh + padY * 2)
+
   const x = Number(pl?.x || 0)
   const y = Number(pl?.y || 0)
   return { x, y, w: wPage, h: hPage, padX, padY }
@@ -607,11 +741,7 @@ async function updateTagValue(tag, rawText) {
 // タグ操作は「パレット上のタグ一覧」に一本化する。
 
 function renderGate() {
-  const step = state.gate?.step || "choose"
   const err = String(state.gate?.error || "")
-  const workerOptions = (state.workers || [])
-    .map((w) => `<option value="${escapeHtml(w.id)}" ${w.id === state.workerId ? "selected" : ""}>${escapeHtml(w.name)}</option>`)
-    .join("")
 
   $("#app").innerHTML = `
     <div class="bgBlobs" aria-hidden="true">
@@ -629,128 +759,171 @@ function renderGate() {
           </div>
         </div>
 
-        ${
-          step === "choose"
-            ? `<div class="gateActions">
-                <button class="btn btn--primary" id="gateWorker">入力者</button>
-                <button class="btn btn--soft" id="gateAdmin">管理者</button>
-              </div>
-              <div class="label gateHint">入力者：作業者を選んで開始　／　管理者：パスワードで機能を開放</div>`
-            : ""
-        }
-
-        ${
-          step === "worker"
-            ? `<div class="gateSection">
-                <div class="row spread" style="margin-bottom:8px">
-                  <div class="badge">入力者</div>
-                  <button class="btn btn--ghost" id="gateBack">戻る</button>
-                </div>
-                <div class="field">
-                  <div class="label">作業者を選択</div>
-                  <select id="gateWorkerPick">${workerOptions}</select>
-                </div>
-                <div class="row" style="margin-top:10px">
-                  <button class="btn btn--soft" id="gateWorkerNew">新規登録</button>
-                  <button class="btn btn--primary" id="gateWorkerGo">この作業者で開始</button>
-                </div>
-                ${err ? `<div class="gateError">${escapeHtml(err)}</div>` : ""}
-              </div>`
-            : ""
-        }
-
-        ${
-          step === "admin"
-            ? `<div class="gateSection">
-                <div class="row spread" style="margin-bottom:8px">
-                  <div class="badge">管理者</div>
-                  <button class="btn btn--ghost" id="gateBack">戻る</button>
-                </div>
-                <div class="field">
-                  <div class="label">パスワード</div>
-                  <input class="input" id="gatePass" type="password" placeholder="パスワードを入力" value="${escapeHtml(state.gate?.password || "")}">
-                </div>
-                <div class="row" style="margin-top:10px">
-                  <button class="btn btn--primary" id="gateAdminGo">管理者として開始</button>
-                </div>
-                ${err ? `<div class="gateError">${escapeHtml(err)}</div>` : ""}
-              </div>`
-            : ""
-        }
+        <div class="gateActions">
+          <button class="btn btn--primary" id="gateLoadPdf">PDFを読み込む</button>
+          <button class="btn btn--soft" id="gateLoadProject">プロジェクトを読み込む</button>
+        </div>
+        <div class="label gateHint">PDFから新規作成　／　既存の案件ファイル（project.json）を開く</div>
+        ${err ? `<div class="gateError">${escapeHtml(err)}</div>` : ""}
+        ${window.__INPUTSTUDIO_DEMO__ ? `<input type="file" id="gateDemoPdf" accept=".pdf,application/pdf" style="display:none" />` : ""}
       </div>
     </div>
     <div class="toast" id="toast"></div>
     <div class="modal" id="modal" style="display:none"></div>
   `
 
-  // bindings
-  const setStep = (s) => {
-    state.gate.step = s
-    state.gate.error = ""
-    render()
-  }
-  const back = $("#gateBack")
-  if (back) back.onclick = () => setStep("choose")
-
-  const bWorker = $("#gateWorker")
-  if (bWorker) bWorker.onclick = () => setStep("worker")
-  const bAdmin = $("#gateAdmin")
-  if (bAdmin) bAdmin.onclick = () => setStep("admin")
-
-  const workerPick = $("#gateWorkerPick")
-  if (workerPick) workerPick.onchange = (e) => {
-    state.workerId = e.target.value
-    saveLocal("inputstudio-last-worker", state.workerId)
-  }
-  const workerNew = $("#gateWorkerNew")
-  if (workerNew) workerNew.onclick = () => openWorkerModal({ mode: "create" })
-  const workerGo = $("#gateWorkerGo")
-  if (workerGo) workerGo.onclick = async () => {
-    try {
-      if (!state.workerId) {
-        state.gate.error = "作業者を選んでください"
-        return render()
-      }
-      // Ensure worker mode
-      try {
-        await window.pywebview.api.set_ui_mode?.("worker")
-      } catch {}
-      state.uiMode = "worker"
-      state.appStage = "main"
-      saveLocal("inputstudio-last-role", "worker")
-      render()
-    } catch (e) {
-      state.gate.error = `開始できませんでした: ${e}`
-      render()
-    }
-  }
-
-  const pass = $("#gatePass")
-  if (pass) {
-    pass.focus()
-    pass.oninput = (e) => {
-      state.gate.password = e.target.value
-      state.gate.error = ""
-    }
-    pass.onkeydown = (e) => {
-      if (e.key === "Enter") $("#gateAdminGo")?.click?.()
-    }
-  }
-  const adminGo = $("#gateAdminGo")
-  if (adminGo) adminGo.onclick = async () => {
-    const p = String(state.gate.password || "")
-    if (p !== "takafumi0812") {
-      state.gate.error = "パスワードが違います"
-      render()
+  // bindings: PDFを読み込む
+  const bLoadPdf = $("#gateLoadPdf")
+  if (bLoadPdf) bLoadPdf.onclick = async () => {
+    if (window.__INPUTSTUDIO_DEMO__) {
+      const inp = $("#gateDemoPdf")
+      if (inp) inp.click()
       return
     }
     try {
-      await window.pywebview.api.set_ui_mode?.("admin")
-    } catch {}
-    state.uiMode = "admin"
-    state.appStage = "main"
-    saveLocal("inputstudio-last-role", "admin")
-    render()
+      const api = window.pywebview?.api
+      const pick = api?.pick_pdf
+      const createSimple = api?.create_project_from_pdf_simple
+      if (!pick || !createSimple) {
+        alert("PDFから新規作成する機能が見つかりません。最新版のアプリをご利用ください。")
+        return
+      }
+      const r = await pick()
+      if (!r?.ok) return
+      toast("PDFを読み込み、新規プロジェクトを作成します…")
+      const g = await createSimple(r.path)
+      if (!g?.ok || !g.path) {
+        return alert((g?.errors || ["PDFをプロジェクト化できませんでした"]).join("\n"))
+      }
+      const loaded = await api.load_project(g.path)
+      if (!loaded?.ok) return alert("新規プロジェクトを開けませんでした")
+      state.projectPath = g.path
+      state.projectName = loaded.project
+      state.tags = loaded.tags || []
+      state.values = loaded.values || {}
+      state.placements = loaded.placements || {}
+      state.pageCount = loaded.page_count || 1
+      state.idx = 0
+      state.dropDir = loaded.drop_dir || ""
+      state.uiMode = loaded.ui_mode || state.uiMode
+      state.lastSession = { path: g.path, workerId: state.workerId, projectName: state.projectName }
+      saveLocal("inputstudio-last-session", state.lastSession)
+      try {
+        const dir = g.path.replace(/[/\\][^/\\]+$/, "")
+        state.lastProjectDir = dir
+        saveLocal("inputstudio-last-dir", dir)
+      } catch {}
+      state.working = false
+      state.inPrivate = false
+      state.timerStart = null
+      state.privateTotal = 0
+      state.appStage = "main"
+      const started = await autoStartWorkIfPossible()
+      toast(started ? "新規案件を作成し、作業タイマーを開始しました" : "PDFから新規プロジェクトを作成しました。必要に応じてタグを配置してください。")
+      render()
+      await queuePreview()
+    } catch (e) {
+      alert(`PDFから新規作成に失敗しました: ${e}`)
+    }
+  }
+
+  // bindings: プロジェクトを読み込む
+  const bLoadProject = $("#gateLoadProject")
+  if (bLoadProject) bLoadProject.onclick = async () => {
+    try {
+      const r = await window.pywebview.api.pick_project()
+      if (!r.ok) return
+      try {
+        const dir = r.path?.replace(/[/\\][^/\\]+$/, "")
+        if (dir) {
+          state.lastProjectDir = dir
+          saveLocal("inputstudio-last-dir", dir)
+        }
+      } catch {}
+      const loaded = await window.pywebview.api.load_project(r.path)
+      if (!loaded.ok) return
+      state.projectPath = r.path
+      state.projectName = loaded.project
+      state.tags = loaded.tags || []
+      state.values = loaded.values || {}
+      state.placements = loaded.placements || {}
+      state.pageCount = loaded.page_count || 1
+      state.idx = 0
+      state.dropDir = loaded.drop_dir || ""
+      state.uiMode = loaded.ui_mode || state.uiMode
+      state.lastSession = { path: r.path, workerId: state.workerId, projectName: state.projectName }
+      saveLocal("inputstudio-last-session", state.lastSession)
+      state.working = false
+      state.inPrivate = false
+      state.timerStart = null
+      state.privateTotal = 0
+      state.appStage = "main"
+      const started = await autoStartWorkIfPossible()
+      toast(started ? "案件を読み込み、作業タイマーを開始しました" : "案件を読み込みました")
+      render()
+      await queuePreview()
+    } catch (e) {
+      alert(`プロジェクトの読み込みに失敗しました: ${e}`)
+    }
+  }
+
+  // Demo: ファイル選択後に読み込み
+  const gateDemoPdf = $("#gateDemoPdf")
+  if (gateDemoPdf) {
+    gateDemoPdf.onchange = async () => {
+      const file = gateDemoPdf.files?.[0]
+      if (!file) return
+      try {
+        toast("PDFを読み込み中…")
+        const buf = await file.arrayBuffer()
+        const pdfjs = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/build/pdf.mjs")
+        pdfjs.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/build/pdf.worker.mjs"
+        const doc = await pdfjs.getDocument({ data: buf }).promise
+        window.__demoPdfDoc = doc
+        window.__demoPdfCache = new Map()
+        const api = window.pywebview?.api
+        if (api) {
+          api.get_preview_png_base64_page = async (page_index) => {
+            const idx = Math.max(0, Math.min(doc.numPages - 1, Number(page_index || 0)))
+            const cache = window.__demoPdfCache
+            if (cache.has(idx)) return cache.get(idx)
+            const page = await doc.getPage(idx + 1)
+            const scale = 150 / 72
+            const vp = page.getViewport({ scale })
+            const canvas = document.createElement("canvas")
+            canvas.width = Math.floor(vp.width)
+            canvas.height = Math.floor(vp.height)
+            const ctx = canvas.getContext("2d")
+            await page.render({ canvasContext: ctx, viewport: vp }).promise
+            const blob = await new Promise((res) => canvas.toBlob(res, "image/png"))
+            const url = URL.createObjectURL(blob)
+            const out = { ok: true, png: url, page_display_width: canvas.width, page_display_height: canvas.height, page_index: idx }
+            cache.set(idx, out)
+            return out
+          }
+          api.get_preview_png_base64 = async (tag) => {
+            const t = String(tag || "").trim()
+            const pl = state.placements?.[t]
+            const idx = pl ? Number(pl.page || 0) : 0
+            return api.get_preview_png_base64_page(idx)
+          }
+        }
+        state.projectPath = "demo:pdf"
+        state.projectName = file.name
+        state.pageCount = doc.numPages
+        state.previewPageIndex = 0
+        state.tags = []
+        state.values = {}
+        state.placements = {}
+        state.appStage = "main"
+        toast(`PDFを読み込みました（${doc.numPages}ページ）`)
+        render()
+      } catch (e) {
+        alert(`PDF読み込みに失敗しました: ${e}`)
+      } finally {
+        gateDemoPdf.value = ""
+      }
+    }
   }
 }
 
@@ -771,10 +944,6 @@ function render() {
   const isAdmin = state.uiMode === "admin"
   // 画面常設のタグ一覧は表示しない（パレットに統一）
   const showTagPane = false
-
-  const modeChip = isAdmin
-    ? `<button class="chip" id="btnLock">入力者モードにする</button>`
-    : `<button class="chip" id="btnAdmin">管理者</button>`
 
   const left = `
     <div class="top">
@@ -800,71 +969,27 @@ function render() {
           <span class="guide__step">${isAdmin ? "2" : "1"}</span>
           <div style="flex:1">${
             isAdmin
-              ? "続きから：既存の案件（プロジェクト）を開いて編集/入力を再開"
+              ? "既存の案件（プロジェクト）を開いて編集/入力を再開"
               : "入力者：管理者が用意した案件（プロジェクト）を開いて入力を開始"
           }</div>
           <button class="chip" id="btnOpen">案件を開く ${tipIcon(1, "PDF付きの案件ファイル（project.json）を選択して開始します。")} </button>
-          ${state.lastSession ? `<button class="chip chip--soft" id="btnResume">続きから</button>` : ""}
         </div>
-        ${
-          state.lastProjectDir
-            ? `<div class="pathLine" title="${escapeHtml(state.lastProjectDir)}">
-                前回開いたフォルダ: <span class="pathValue">${escapeHtml(state.lastProjectDir)}</span>
-              </div>`
-            : ""
-        }
       </div>
 
       <div class="miniActions">
         ${isAdmin ? `<button class="chip" id="btnDesign">設計（統括）</button>` : ""}
         <button class="chip" id="btnSave" ${state.projectPath ? "" : "disabled"}>上書き保存</button>
         <button class="chip chip--soft" id="btnSaveAs" ${state.projectPath ? "" : "disabled"}>名前を付けて保存</button>
-        <button class="chip chip--soft" id="btnAddPdf" ${state.projectPath ? "" : "disabled"}>PDF追加</button>
+        <button class="chip chip--soft" id="btnAddPdf" ${state.projectPath ? "" : "disabled"}>PDF/ページ操作</button>
         ${state.projectPath ? `<button class="chip chip--soft" id="btnOpenSaved">保存先</button>` : ""}
-        ${state.lastFilledPdf ? `<button class="chip chip--soft" id="btnOpenFilled">提出PDF</button>` : ""}
-        ${!isAdmin ? `<button class="chip chip--soft" id="btnMyHistory">自分の履歴</button>` : ""}
-        ${modeChip}
         ${isAdmin ? `<button class="chip chip--soft" id="btnHistoryExport">履歴CSV</button>` : ""}
         ${isAdmin ? `<button class="chip chip--soft" id="btnHistoryReset">履歴リセット</button>` : ""}
       </div>
-      ${
-        state.projectPath
-          ? `<div class="pathLine" title="${escapeHtml(state.projectPath)}">
-              保存先: <span class="pathValue">${escapeHtml(state.projectPath)}</span>
-            </div>`
-          : ""
-      }
-      ${
-        state.lastFilledPdf
-          ? `<div class="pathLine" title="${escapeHtml(state.lastFilledPdf)}">
-              提出PDF: <span class="pathValue">${escapeHtml(state.lastFilledPdf)}</span>
-            </div>`
-          : ""
-      }
 
       <div class="glassBox">
         <div class="row spread">
           <div class="badge">${state.projectName ? `案件：${escapeHtml(state.projectName)}` : "案件未選択"}</div>
           <div class="badge">${done}/${total || 0} 完了</div>
-        </div>
-
-        <div class="row" style="margin-top:10px">
-          <div class="field">
-            <div class="label">作業者 ${tipIcon(2, "作業者を選ぶと、その人の入力・進捗でPDFが更新されます。")}</div>
-            <select id="workerSelect">
-              ${state.workers
-                .map((w) => `<option value="${w.id}" ${w.id === state.workerId ? "selected" : ""}>${escapeHtml(w.name)}</option>`)
-                .join("")}
-            </select>
-          </div>
-          ${isAdmin ? `<button class="btn btn--soft" id="btnWorker">編集</button>` : ""}
-        </div>
-
-        <div class="row" style="margin-top:10px">
-          <div class="field" style="flex:1">
-            <div class="label">説明 / 注意 ${tipIcon(3, "作業の注意・締切・補足をここに記載。入力者はここを見ながら進めます。")}</div>
-            <textarea id="infoBox" placeholder="作業の注意・締切・進め方などを記入" rows="3"></textarea>
-          </div>
         </div>
 
         <div class="row spread" style="margin-top:12px">
@@ -904,31 +1029,38 @@ function render() {
                 <div class="row">
                   <button class="btn btn--soft" id="btnPrev" ${idx <= 0 ? "disabled" : ""}>戻る</button>
                   <button class="btn btn--primary" id="btnNext" ${idx >= total - 1 ? "disabled" : ""}>次へ</button>
-                  <button class="btn btn--soft" id="btnNextEmpty">未入力へ</button>
-                  ${!isAdmin ? `<button class="btn btn--tint" id="btnAddField">欄を追加</button>` : ""}
                 </div>
-                <button class="btn btn--ghost" id="btnClear">クリア</button>
               </div>
             </div>
           </div>`
         : ""
     }
+    <div class="glassBox" style="margin-top:10px">
+      ${state.lastProjectDir ? `<div class="pathLine" title="${escapeHtml(state.lastProjectDir)}">前回開いたフォルダ: <span class="pathValue">${escapeHtml(state.lastProjectDir)}</span></div>` : ""}
+      ${state.projectPath ? `<div class="pathLine" title="${escapeHtml(state.projectPath)}">保存先: <span class="pathValue">${escapeHtml(state.projectPath)}</span></div>` : ""}
+      ${state.lastFilledPdf ? `<div class="pathLine" title="${escapeHtml(state.lastFilledPdf)}">提出PDF: <span class="pathValue">${escapeHtml(state.lastFilledPdf)}</span></div>` : ""}
+    </div>
   `
 
   const right = `
     ${
       state.projectPath
         ? `<div class="previewImg">
-            <img id="previewImg" alt="preview" draggable="false" />
+            <div class="previewScale" id="previewScale">
+              <img id="previewImg" alt="preview" draggable="false" />
+            </div>
             <div class="previewHud">
               <div class="previewHud__left">
                 <span class="badge">ライブプレビュー ${tipIcon(4, "入力した値がPDF画像に重ねて表示されます。ページ切替で別ページも確認できます。")}</span>
               </div>
               <div class="previewHud__right">
                 <button class="btn btn--soft" id="btnPrevPage">前</button>
-                <span class="badge" id="pageIndicator">${(state.previewPageIndex || 0) + 1} / ${state.pageCount || 1}</span>
+                <button class="btn btn--soft" id="pageIndicator" title="ページ番号を入力して移動">${(state.previewPageIndex || 0) + 1} / ${state.pageCount || 1}</button>
                 <button class="btn btn--soft" id="btnNextPage">次</button>
-                <button class="btn btn--soft" id="btnTogglePanel">${state.showPanel ? "操作欄:ON" : "操作欄:OFF"}</button>
+                <button class="btn btn--soft" id="btnZoomOut">−</button>
+                <span class="badge" id="zoomIndicator">${Math.round((Number(state.viewZoom || 1) || 1) * 100)}%</span>
+                <button class="btn btn--soft" id="btnZoomIn">＋</button>
+                <button class="btn btn--soft" id="btnZoomReset">100%</button>
               </div>
             </div>
             <canvas id="confetti" class="confetti" aria-hidden="true"></canvas>
@@ -978,6 +1110,7 @@ function render() {
 function bind() {
   // Tooltips that never go off-screen
   bindTipFloatOnce()
+  applyPreviewTransform()
 
   // Global hotkeys (selection / undo / copy-paste)
   document.onkeydown = async (ev) => {
@@ -1077,8 +1210,21 @@ function bind() {
       return
     }
 
-    // Nudge with arrows
+    // Arrow keys:
+    // - Multi-page projects: page navigation with plain arrows
+    // - Element nudge: Alt + arrows
     if (k === "ArrowLeft" || k === "ArrowRight" || k === "ArrowUp" || k === "ArrowDown") {
+      const hasMultiPage = Number(state.pageCount || 1) > 1
+      const plainArrow = !ev.altKey && !ctrl
+      if (hasMultiPage && plainArrow) {
+        ev.preventDefault()
+        state.pageLocked = true
+        const cur = Number.isFinite(state.previewPageIndex) ? state.previewPageIndex : 0
+        const delta = (k === "ArrowRight" || k === "ArrowDown") ? 1 : -1
+        await showPage(cur + delta)
+        return
+      }
+      if (!ev.altKey) return
       if (!state.selectKeys.length) return
       ev.preventDefault()
       const step = ev.shiftKey ? 10 : 1
@@ -1342,21 +1488,7 @@ function bind() {
   const btnAddPdf = $("#btnAddPdf")
   if (btnAddPdf) btnAddPdf.onclick = async () => {
     if (!state.projectPath) return toast("先に案件を開いてください")
-    const api = window.pywebview?.api
-    if (!api?.pick_pdf || !api?.append_pdf_to_project) return toast("PDF追加機能が見つかりません（最新版に更新してください）")
-    if (state.uiMode !== "admin") {
-      const ok = confirm("この案件にPDFを追加します。ページ数が増え、配置は全ページに対して有効になります。\n（管理者に確認済みですか？）")
-      if (!ok) return
-    }
-    const r = await api.pick_pdf()
-    if (!r?.ok || !r.path) return
-    toast("PDFを追加して結合中…")
-    const a = await api.append_pdf_to_project(r.path)
-    if (!a?.ok) return toast(`PDF追加に失敗: ${a?.error || "unknown"}`)
-    state.pageCount = a.page_count || state.pageCount
-    toast(`PDFを追加しました（合計 ${state.pageCount} ページ）`)
-    await showPage(state.previewPageIndex || 0)
-    render()
+    await openPageOpsModal()
   }
 
   const btnOpenSaved = $("#btnOpenSaved")
@@ -1406,13 +1538,30 @@ function bind() {
     state.pageLocked = true
     showPage((state.previewPageIndex || 0) + 1)
   }
-
-  const btnTogglePanel = $("#btnTogglePanel")
-  if (btnTogglePanel) btnTogglePanel.onclick = () => {
-    state.showPanel = !state.showPanel
-    saveLocal("inputstudio-show-panel", state.showPanel)
-    render()
+  const pageIndicator = $("#pageIndicator")
+  if (pageIndicator) pageIndicator.onclick = async () => {
+    const total = Math.max(1, Number(state.pageCount || 1))
+    const cur = (Number(state.previewPageIndex || 0) || 0) + 1
+    const raw = prompt(`移動先ページを入力してください（1-${total}）`, String(cur))
+    if (raw == null) return
+    const n = Number(String(raw).trim())
+    if (!Number.isFinite(n)) return toast("ページ番号が不正です")
+    const idx = Math.max(1, Math.min(total, Math.floor(n))) - 1
+    state.pageLocked = true
+    await showPage(idx)
   }
+
+  const btnZoomOut = $("#btnZoomOut")
+  if (btnZoomOut) btnZoomOut.onclick = () => setViewZoom((Number(state.viewZoom || 1) || 1) - 0.1)
+  const btnZoomIn = $("#btnZoomIn")
+  if (btnZoomIn) btnZoomIn.onclick = () => setViewZoom((Number(state.viewZoom || 1) || 1) + 0.1)
+  const btnZoomReset = $("#btnZoomReset")
+  if (btnZoomReset)
+    btnZoomReset.onclick = () => {
+      state.viewPanX = 0
+      state.viewPanY = 0
+      setViewZoom(1.0)
+    }
 
   const btnAddFromCenter = $("#btnAddFromCenter")
   if (btnAddFromCenter) btnAddFromCenter.onclick = () => {
@@ -1454,14 +1603,17 @@ function bind() {
     render()
   }
 
-  $("#workerSelect").onchange = async (e) => {
-    state.workerId = e.target.value
-    saveLocal("inputstudio-last-worker", state.workerId)
-    if (!state.working) {
-      const started = await autoStartWorkIfPossible()
-      if (started) {
-        toast("作業タイマーを開始しました")
-        render()
+  const workerSelect = $("#workerSelect")
+  if (workerSelect) {
+    workerSelect.onchange = async (e) => {
+      state.workerId = e.target.value
+      saveLocal("inputstudio-last-worker", state.workerId)
+      if (!state.working) {
+        const started = await autoStartWorkIfPossible()
+        if (started) {
+          toast("作業タイマーを開始しました")
+          render()
+        }
       }
     }
   }
@@ -1535,13 +1687,27 @@ function bind() {
     if (!ok) return
     await pushValue()
     toast("提出物を作成中…")
-    const r = await window.pywebview.api.finish()
+    const endIso = new Date().toISOString()
+    const meta = {
+      worker_id: String(state.workerId || ""),
+      worker_name: String((state.workers.find((w) => w.id === state.workerId) || {}).name || ""),
+      start_iso: String(state.sessionStart || ""),
+      end_iso: String(endIso),
+      duration_sec: Number(calcNetSeconds() || 0),
+      private_sec: Number(state.privateTotal || 0),
+      total_tags: Number(state.tags?.length || 0),
+      filled_count: Number(filledCount() || 0),
+      placement_count: Number(Object.keys(state.placements || {}).length || 0),
+      project_name: String(state.projectName || ""),
+      project_path: String(state.projectPath || ""),
+    }
+    const r = await window.pywebview.api.finish(meta)
     if (!r.ok) return toast(`提出物の作成に失敗しました: ${r.error || "unknown"}`)
     if (r?.filled_pdf) state.lastFilledPdf = r.filled_pdf
     if (r?.dir) state.lastExportDir = r.dir
+    if (r?.report_pdf) state.lastReportPdf = r.report_pdf
     state.working = false
     state.justCompleted = true
-    const end = new Date().toISOString()
     const duration = calcNetSeconds()
     state.history = [
       ...state.history,
@@ -1551,7 +1717,7 @@ function bind() {
         workerId: state.workerId,
         workerName: (state.workers.find((w) => w.id === state.workerId) || {}).name || "",
         start: state.sessionStart,
-        end,
+        end: endIso,
         duration,
       },
     ]
@@ -1562,6 +1728,14 @@ function bind() {
     state.inPrivate = false
     render()
     openFinishModal(r)
+    // 要望: 終了直後にエクスプローラーで保存階層を開く
+    try {
+      const api = window.pywebview?.api
+      const target = r?.bundle_dir || r?.dir || r?.filled_pdf || ""
+      if (api?.reveal_in_explorer && target) {
+        await api.reveal_in_explorer(String(target))
+      }
+    } catch {}
   }
 
   const btnPrev = $("#btnPrev")
@@ -1650,6 +1824,17 @@ function bind() {
   if (ov) {
     // enable overlay interactions for selection/editing
     enableOverlayPointer(!!state.projectPath)
+    const previewHost = ov.parentElement
+    if (previewHost) {
+      previewHost.addEventListener("wheel", (ev) => {
+        if (!state.projectPath) return
+        ev.preventDefault()
+        const withCtrl = !!(ev.ctrlKey || ev.metaKey)
+        const step = withCtrl ? 0.2 : 0.1
+        const dir = ev.deltaY > 0 ? -step : step
+        setViewZoom((Number(state.viewZoom || 1) || 1) + dir)
+      }, { passive: false })
+    }
     const toPageXY = (ev) => {
       const img = $("#previewImg")
       if (!img || !img.src) return null
@@ -1686,6 +1871,11 @@ function bind() {
     let dragUndo = null
     let clickTag = null
     let moved = false
+    let panning = false
+    let panStartX = 0
+    let panStartY = 0
+    let panBaseX = 0
+    let panBaseY = 0
 
     // PDFをダブルクリック -> 配置パレット（作業者でも使える）
     ov.ondblclick = (ev) => {
@@ -1701,6 +1891,18 @@ function bind() {
     ov.onpointerdown = (ev) => {
       if (!state.projectPath) return
       if (state.designMode) return
+      if (ev.button === 1 || ev.altKey) {
+        panning = true
+        panStartX = ev.clientX
+        panStartY = ev.clientY
+        panBaseX = Number(state.viewPanX || 0) || 0
+        panBaseY = Number(state.viewPanY || 0) || 0
+        try {
+          ov.setPointerCapture?.(ev.pointerId)
+        } catch {}
+        ev.preventDefault()
+        return
+      }
       if (state.addMode) return
       // ignore if starting on modal etc
       const p = toPageXY(ev)
@@ -1738,6 +1940,15 @@ function bind() {
     }
 
     ov.onpointermove = (ev) => {
+      if (panning) {
+        const dx = ev.clientX - panStartX
+        const dy = ev.clientY - panStartY
+        state.viewPanX = panBaseX + dx
+        state.viewPanY = panBaseY + dy
+        applyPreviewTransform()
+        drawOverlay()
+        return
+      }
       if (!dragging || !dragStart || !dragBase) return
       const p = toPageXY(ev)
       if (!p) return
@@ -1756,6 +1967,10 @@ function bind() {
     }
 
     ov.onpointerup = async () => {
+      if (panning) {
+        panning = false
+        return
+      }
       if (!dragging) {
         clickTag = null
         return
@@ -1801,12 +2016,13 @@ function bind() {
       const x = p.x
       const y = p.y
       toast("欄を追加中…")
-      let r = await window.pywebview.api.add_text_field(state.addDraftName, state.previewPageIndex || 0, x, y, 14)
+      const fs = Number(state.defaultFontSize || 14) || 14
+      let r = await window.pywebview.api.add_text_field(state.addDraftName, state.previewPageIndex || 0, x, y, fs)
       // Recover if backend lost project context (rare, but observed)
       if (!r.ok && r.error === "no_project" && state.projectPath && window.pywebview.api.load_project) {
         try {
           await window.pywebview.api.load_project(state.projectPath)
-          r = await window.pywebview.api.add_text_field(state.addDraftName, state.previewPageIndex || 0, x, y, 14)
+          r = await window.pywebview.api.add_text_field(state.addDraftName, state.previewPageIndex || 0, x, y, fs)
         } catch {}
       }
       if (!r.ok) {
@@ -1819,7 +2035,7 @@ function bind() {
       const tag = r.tag
       if (!state.tags.includes(tag)) state.tags.push(tag)
       if (state.values[tag] == null) state.values[tag] = ""
-      state.placements[fid] = { tag, page: state.previewPageIndex || 0, x, y, font_size: 14, color: "#0f172a", line_height: 1.2, letter_spacing: 0 }
+      state.placements[fid] = { tag, page: state.previewPageIndex || 0, x, y, font_size: fs, color: "#0f172a", line_height: 1.2, letter_spacing: DEFAULT_LETTER_SPACING }
       state.selectKeys = [fid]
       state.idx = state.tags.indexOf(tag)
       await window.pywebview.api.save_current_project(false)
@@ -1977,6 +2193,8 @@ function openFinishModal(result) {
   const dir = String(result?.dir || "")
   const zip = String(result?.zip || "")
   const pdf = String(result?.filled_pdf || "")
+  const bundleDir = String(result?.bundle_dir || "")
+  const reportPdf = String(result?.report_pdf || "")
 
   const close = () => {
     modal.style.display = "none"
@@ -2000,11 +2218,19 @@ function openFinishModal(result) {
         <div class="pathLine" title="${escapeHtml(zip)}"><span class="pathValue">${escapeHtml(zip)}</span></div>
       </div>
       <div class="field" style="margin-top:10px">
+        <div class="label">送付用フォルダ（PDF + project.json + template.pdf）</div>
+        <div class="pathLine" title="${escapeHtml(bundleDir || dir)}"><span class="pathValue">${escapeHtml(bundleDir || dir)}</span></div>
+      </div>
+      <div class="field" style="margin-top:10px">
         <div class="label">PDF（確認用）</div>
         <div class="pathLine" title="${escapeHtml(pdf)}"><span class="pathValue">${escapeHtml(pdf)}</span></div>
       </div>
+      <div class="field" style="margin-top:10px">
+        <div class="label">報告書PDF</div>
+        <div class="pathLine" title="${escapeHtml(reportPdf || "")}"><span class="pathValue">${escapeHtml(reportPdf || "（未生成）")}</span></div>
+      </div>
       <div class="row" style="margin-top:14px; justify-content:flex-end">
-        <button class="btn btn--primary" id="btnOpenAttachment">添付データを開く</button>
+        <button class="btn btn--primary" id="btnOpenAttachment">フォルダを開く</button>
         <button class="btn btn--soft" id="btnFinishClose">閉じる</button>
       </div>
     </div>
@@ -2017,7 +2243,7 @@ function openFinishModal(result) {
   if (openBtn)
     openBtn.onclick = async () => {
       const api = window.pywebview?.api
-      const target = zip || dir || pdf
+      const target = bundleDir || dir || zip || pdf
       if (!target) return
       if (api?.reveal_in_explorer) {
         const r = await api.reveal_in_explorer(target)
@@ -2031,6 +2257,189 @@ function openFinishModal(result) {
         toast(String(target))
       }
     }
+}
+
+async function openPageOpsModal() {
+  const modal = $("#modal")
+  if (!modal) return
+  const close = () => {
+    modal.style.display = "none"
+    modal.innerHTML = ""
+  }
+  modal.style.display = "block"
+  modal.innerHTML = `
+    <div class="modal__backdrop" id="modalClose"></div>
+    <div class="modal__card" style="width:min(1200px, calc(100vw - 40px)); max-width:1200px">
+      <div class="modal__title">PDF / ページ操作</div>
+      <div class="label" style="line-height:1.7">現在ページ: ${(Number(state.previewPageIndex || 0) || 0) + 1} / ${Math.max(1, Number(state.pageCount || 1))}</div>
+      <div class="row" style="margin-top:12px; gap:10px; flex-wrap:wrap">
+        <button class="btn btn--soft" id="poAddPdf">PDFを追加</button>
+        <button class="btn btn--soft" id="poCopyPage" ${state.projectPath ? "" : "disabled"}>現在ページをコピー（要素含む）</button>
+        <button class="btn btn--danger" id="poDeletePage" ${Number(state.pageCount || 1) <= 1 ? "disabled" : ""}>現在ページを削除</button>
+      </div>
+      <div class="label" style="margin-top:10px">※ ページコピーは配置済み要素も複製します。下のカードはドラッグ&ドロップで直感的に並び替えできます。</div>
+      <div class="pageOpsBoard" id="pageOpsBoard"></div>
+      <div class="row" style="margin-top:14px; justify-content:flex-end">
+        <button class="btn btn--primary" id="poApplyOrder" disabled>並び替えを保存</button>
+        <button class="btn btn--soft" id="poClose">閉じる</button>
+      </div>
+    </div>
+  `
+  $("#modalClose").onclick = close
+  $("#poClose").onclick = close
+
+  const api = window.pywebview?.api
+  const curr = Number(state.previewPageIndex || 0) || 0
+  const totalPages = Math.max(1, Number(state.pageCount || 1) || 1)
+  let order = Array.from({ length: totalPages }, (_, i) => i)
+  let dragPos = -1
+  const poApplyOrder = $("#poApplyOrder")
+  const board = $("#pageOpsBoard")
+
+  const renderBoard = async () => {
+    if (!board) return
+    const pageModels = await Promise.all(
+      order.map(async (oldPageIdx, pos) => {
+        const pr = await api.get_preview_png_base64_page(oldPageIdx)
+        const src = pr?.ok ? String(pr.png || "") : ""
+        const srcData = pr?.ok ? String(pr.png_data || "") : ""
+        return {
+          pos,
+          oldPageIdx,
+          src,
+          srcData,
+        }
+      })
+    )
+    const modelByPos = new Map(pageModels.map((m) => [m.pos, m]))
+    const cards = pageModels
+      .map(({ pos, oldPageIdx, src, srcData }) => {
+        const initialSrc = src || srcData || ""
+        const hasImage = !!initialSrc
+        const currentCls = oldPageIdx === curr ? " is-current" : ""
+        return `
+          <div class="pageCard${currentCls}" draggable="true" data-pos="${pos}" data-old="${oldPageIdx}">
+            <div class="pageCard__thumb">${hasImage ? `<img class="pageCardImg" draggable="false" data-pos="${pos}" src="${escapeHtml(initialSrc)}" alt="page ${oldPageIdx + 1}" />` : "<div class=\"pageCard__noimg\">No Image</div>"}</div>
+            <div class="pageCard__meta">
+              <span class="badge">表示順 ${pos + 1}</span>
+              <span class="badge badge--soft">元ページ ${oldPageIdx + 1}</span>
+            </div>
+          </div>
+        `
+      })
+      .join("")
+    board.innerHTML = cards
+
+    board.querySelectorAll(".pageCardImg").forEach((img) => {
+      img.addEventListener("error", () => {
+        const pos = Number(img.getAttribute("data-pos") || "-1")
+        const model = modelByPos.get(pos)
+        if (!model) return
+        const current = String(img.getAttribute("src") || "")
+        if (model.srcData && current !== model.srcData) {
+          img.setAttribute("src", model.srcData)
+          return
+        }
+      })
+    })
+
+    board.querySelectorAll(".pageCard").forEach((el) => {
+      el.addEventListener("dragstart", (ev) => {
+        dragPos = Number(el.getAttribute("data-pos") || "-1")
+        ev.dataTransfer?.setData("text/plain", String(dragPos))
+        ev.dataTransfer.effectAllowed = "move"
+      })
+      el.addEventListener("dragover", (ev) => {
+        ev.preventDefault()
+        el.classList.add("is-over")
+      })
+      el.addEventListener("dragleave", () => {
+        el.classList.remove("is-over")
+      })
+      el.addEventListener("drop", (ev) => {
+        ev.preventDefault()
+        el.classList.remove("is-over")
+        const toPos = Number(el.getAttribute("data-pos") || "-1")
+        const fromPos = Number(ev.dataTransfer?.getData("text/plain") || dragPos)
+        if (fromPos < 0 || toPos < 0 || fromPos === toPos) return
+        const next = [...order]
+        const [moved] = next.splice(fromPos, 1)
+        next.splice(toPos, 0, moved)
+        order = next
+        if (poApplyOrder) poApplyOrder.disabled = false
+        renderBoard()
+      })
+    })
+  }
+
+  await renderBoard()
+
+  const poAddPdf = $("#poAddPdf")
+  if (poAddPdf) {
+    poAddPdf.onclick = async () => {
+      if (!api?.pick_pdf || !api?.append_pdf_to_project) return toast("PDF追加機能が見つかりません（最新版に更新してください）")
+      const r = await api.pick_pdf()
+      if (!r?.ok || !r.path) return
+      toast("PDFを追加して結合中…")
+      const a = await api.append_pdf_to_project(r.path)
+      if (!a?.ok) return toast(`PDF追加に失敗: ${a?.error || "unknown"}`)
+      state.pageCount = a.page_count || state.pageCount
+      close()
+      render()
+      await showPage(curr)
+      toast(`PDFを追加しました（合計 ${state.pageCount} ページ）`)
+    }
+  }
+
+  const poCopyPage = $("#poCopyPage")
+  if (poCopyPage) {
+    poCopyPage.onclick = async () => {
+      if (!api?.copy_page_with_elements) return toast("ページコピー機能が見つかりません（最新版に更新してください）")
+      const r = await api.copy_page_with_elements(curr)
+      if (!r?.ok) return toast(`ページコピーに失敗: ${r?.error || "unknown"}`)
+      state.pageCount = Number(r.page_count || state.pageCount) || state.pageCount
+      state.placements = r.placements && typeof r.placements === "object" ? r.placements : state.placements
+      close()
+      render()
+      await showPage(Number(r.page_index ?? (curr + 1)))
+      toast("ページをコピーしました")
+    }
+  }
+
+  const poDeletePage = $("#poDeletePage")
+  if (poDeletePage) {
+    poDeletePage.onclick = async () => {
+      if (!api?.delete_page_from_project) return toast("ページ削除機能が見つかりません（最新版に更新してください）")
+      const ok = confirm("現在ページを削除します。配置済み要素も対象ページ分は削除されます。よろしいですか？")
+      if (!ok) return
+      const r = await api.delete_page_from_project(curr)
+      if (!r?.ok) return toast(`ページ削除に失敗: ${r?.error || "unknown"}`)
+      state.pageCount = Number(r.page_count || state.pageCount) || state.pageCount
+      state.tags = Array.isArray(r.tags) ? r.tags : state.tags
+      state.values = r.values && typeof r.values === "object" ? r.values : state.values
+      state.placements = r.placements && typeof r.placements === "object" ? r.placements : state.placements
+      close()
+      render()
+      await showPage(Number(r.page_index ?? Math.max(0, curr - 1)))
+      toast("ページを削除しました")
+    }
+  }
+
+  if (poApplyOrder) {
+    poApplyOrder.onclick = async () => {
+      if (!api?.reorder_pages) return toast("ページ並び替え機能が見つかりません（最新版に更新してください）")
+      const newCurrent = Math.max(0, order.indexOf(curr))
+      toast("ページ順を保存中…")
+      const r = await api.reorder_pages(order)
+      if (!r?.ok) return toast(`ページ並び替えに失敗: ${r?.error || "unknown"}`)
+      state.pageCount = Number(r.page_count || state.pageCount) || state.pageCount
+      state.placements = r.placements && typeof r.placements === "object" ? r.placements : state.placements
+      close()
+      render()
+      await showPage(newCurrent)
+      toast("ページ順を更新しました")
+    }
+  }
 }
 
 function pulse() {
@@ -2427,9 +2836,11 @@ function openPlacePalette(pt, editFid = null) {
   const pageIdx = Number.isFinite(state.previewPageIndex) ? state.previewPageIndex : 0
   const isEdit = !!editFid
   const currentPl = isEdit ? (state.placements?.[editFid] || {}) : {}
+  const defaultFs = Number(currentPl.font_size || state.defaultFontSize || 14) || 14
   const curColor = String(currentPl.color || "#0f172a")
   const curLH = Number(currentPl.line_height || 1.2) || 1.2
-  const curLS = Number(currentPl.letter_spacing || 0) || 0
+  const curLS = Number(currentPl.letter_spacing ?? DEFAULT_LETTER_SPACING) || DEFAULT_LETTER_SPACING
+  let writingMode = String(currentPl.writing_mode || "horizontal")
   const tagsOptions = state.tags.map((t) => `<option value="${escapeHtml(t)}"></option>`).join("")
   modal.style.display = "block"
   modal.innerHTML = `
@@ -2450,11 +2861,18 @@ function openPlacePalette(pt, editFid = null) {
         <div class="field" style="width:160px">
           <div class="label">サイズ</div>
           <div class="spin">
-            <input class="input" id="pSize" inputmode="numeric" value="${Number(currentPl.font_size || 14) || 14}" />
+            <input class="input" id="pSize" inputmode="numeric" value="${defaultFs}" />
             <div class="spin__btns">
               <button class="spin__btn" id="pSizeUp" type="button">▲</button>
               <button class="spin__btn" id="pSizeDown" type="button">▼</button>
             </div>
+          </div>
+        </div>
+        <div class="field" style="width:200px">
+          <div class="label">縦書き/横書き</div>
+          <div class="row" style="gap:8px">
+            <button class="btn btn--soft" id="pWmH" type="button">横書</button>
+            <button class="btn btn--soft" id="pWmV" type="button">縦書</button>
           </div>
         </div>
         <div class="field" style="width:180px">
@@ -2534,11 +2952,12 @@ function openPlacePalette(pt, editFid = null) {
       const fontSize = Number(pl.font_size || 14) || 14
       const color = String(pl.color || "#0f172a")
       const lineH = Number(pl.line_height || 1.2) || 1.2
-      const letterS = Number(pl.letter_spacing || 0) || 0
+      const letterS = Number(pl.letter_spacing ?? DEFAULT_LETTER_SPACING) || DEFAULT_LETTER_SPACING
+      const writingMode0 = String(pl.writing_mode || "horizontal")
       state.placements[fid] = { ...(state.placements?.[fid] || {}), tag, page, x, y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS }
       if (tag) state.values[tag] = String(original.val || "")
       if (window.pywebview?.api?.update_placement) {
-        await window.pywebview.api.update_placement(fid, { tag, page, x, y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS })
+        await window.pywebview.api.update_placement(fid, { tag, page, x, y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS, writing_mode: writingMode0 })
       } else {
         await window.pywebview.api.set_element_pos?.(fid, x, y)
       }
@@ -2557,6 +2976,8 @@ function openPlacePalette(pt, editFid = null) {
   const tagInput = $("#pTag")
   const valInput = $("#pVal")
   const sizeInput = $("#pSize")
+  const wmHBtn = $("#pWmH")
+  const wmVBtn = $("#pWmV")
   const colorInput = $("#pColor")
   const lineHInput = $("#pLineH")
   const letterSInput = $("#pLetterS")
@@ -2565,6 +2986,20 @@ function openPlacePalette(pt, editFid = null) {
   const tagCard = $("#tagCard")
   const tagQuickPane = $("#tagQuickPane")
   const tagSearch = $("#tagSearch")
+
+  const setWritingMode = (m) => {
+    writingMode = (String(m) === "vertical") ? "vertical" : "horizontal"
+    if (wmHBtn) wmHBtn.classList.toggle("is-selected", writingMode === "horizontal")
+    if (wmVBtn) wmVBtn.classList.toggle("is-selected", writingMode === "vertical")
+    // live preview: reflect into placement box sizing
+    if (isEdit && editFid && state.placements?.[editFid]) {
+      state.placements[editFid] = { ...(state.placements[editFid] || {}), writing_mode: writingMode }
+      drawOverlay()
+    }
+  }
+  if (wmHBtn) wmHBtn.onclick = () => setWritingMode("horizontal")
+  if (wmVBtn) wmVBtn.onclick = () => setWritingMode("vertical")
+  setWritingMode(writingMode)
 
   // 2つのパレットが重なる場合：操作している方を前面にする
   const bringToFront = (which) => {
@@ -2594,6 +3029,7 @@ function openPlacePalette(pt, editFid = null) {
   if (sw) {
     const colors = [
       "#0f172a",
+      "#ffffff",
       "#141726",
       "#64748b",
       "#7c5cff",
@@ -2666,6 +3102,8 @@ function openPlacePalette(pt, editFid = null) {
         const raw = (valInput?.value || "").replaceAll("\r\n", "\n")
         const val = raw.replaceAll("\n", "<br>")
         const fontSize = Number(sizeInput?.value || "14") || 14
+        state.defaultFontSize = fontSize
+        window.pywebview?.api?.update_admin_settings?.({ default_font_size: fontSize })
         const color = String(colorInput?.value || "#0f172a").trim() || "#0f172a"
         const lineH = Number(lineHInput?.value || "1.2") || 1.2
         const letterS = Number(letterSInput?.value || "0") || 0
@@ -2722,7 +3160,7 @@ function openPlacePalette(pt, editFid = null) {
       const lines = v ? v.split("\n") : [String(pl.tag || "")]
       const longest = Math.max(...lines.map((s) => s.length), 1)
       const lh = Number(pl.line_height || 1.2) || 1.2
-      const ls = Number(pl.letter_spacing || 0) || 0
+      const ls = Number(pl.letter_spacing ?? DEFAULT_LETTER_SPACING) || DEFAULT_LETTER_SPACING
       const wPage = Math.max(42, longest * (fs * 0.62 + ls))
       const hPage = Math.max(22, lines.length * fs * lh)
       ax = content.left + (Number(pl.x || pt.x) / state.pageW) * content.width
@@ -2736,15 +3174,35 @@ function openPlacePalette(pt, editFid = null) {
     const ch = rect().height
     const el = { left: ax, top: ay, width: aw, height: ah }
 
+    // Keep palette visible even when stage is partially outside viewport.
+    const viewport = {
+      left: pad,
+      top: pad,
+      right: Math.max(pad, window.innerWidth - pad),
+      bottom: Math.max(pad, window.innerHeight - pad),
+    }
+    const bounds = {
+      left: Math.max(stage.left + pad, viewport.left),
+      top: Math.max(stage.top + pad, viewport.top),
+      right: Math.min(stage.right - pad, viewport.right),
+      bottom: Math.min(stage.bottom - pad, viewport.bottom),
+    }
+    if (bounds.right - bounds.left < 40 || bounds.bottom - bounds.top < 40) {
+      bounds.left = viewport.left
+      bounds.top = viewport.top
+      bounds.right = viewport.right
+      bounds.bottom = viewport.bottom
+    }
+
     const fit = (l, t) =>
-      l >= stage.left + pad &&
-      t >= stage.top + pad &&
-      l + cw <= stage.right - pad &&
-      t + ch <= stage.bottom - pad
+      l >= bounds.left &&
+      t >= bounds.top &&
+      l + cw <= bounds.right &&
+      t + ch <= bounds.bottom
 
     const clamp = (l, t) => {
-      const ll = Math.min(Math.max(l, stage.left + pad), stage.right - pad - cw)
-      const tt = Math.min(Math.max(t, stage.top + pad), stage.bottom - pad - ch)
+      const ll = Math.min(Math.max(l, bounds.left), bounds.right - cw)
+      const tt = Math.min(Math.max(t, bounds.top), bounds.bottom - ch)
       return { l: ll, t: tt }
     }
 
@@ -2778,20 +3236,19 @@ function openPlacePalette(pt, editFid = null) {
 
     card.style.left = `${Math.round(pos.l)}px`
     card.style.top = `${Math.round(pos.t)}px`
-
     // Place tagCard near paletteCard within stage (same size feeling)
     if (tagCard) {
       const r1 = card.getBoundingClientRect()
       const w2 = tagCard.getBoundingClientRect().width || 520
       const h2 = tagCard.getBoundingClientRect().height || 420
       const fit = (l, t) =>
-        l >= stage.left + pad &&
-        t >= stage.top + pad &&
-        l + w2 <= stage.right - pad &&
-        t + h2 <= stage.bottom - pad
+        l >= bounds.left &&
+        t >= bounds.top &&
+        l + w2 <= bounds.right &&
+        t + h2 <= bounds.bottom
       const clamp = (l, t) => {
-        const ll = Math.min(Math.max(l, stage.left + pad), stage.right - pad - w2)
-        const tt = Math.min(Math.max(t, stage.top + pad), stage.bottom - pad - h2)
+        const ll = Math.min(Math.max(l, bounds.left), bounds.right - w2)
+        const tt = Math.min(Math.max(t, bounds.top), bounds.bottom - h2)
         return { l: ll, t: tt }
       }
       const cands = [
@@ -2827,11 +3284,35 @@ function openPlacePalette(pt, editFid = null) {
     } catch {}
   }
 
+  const normalizeText = (s) => String(s || "").replaceAll("<br>", "\n").trim().toLowerCase()
+  const getFilteredTags = (qRaw) => {
+    const q = normalizeText(qRaw)
+    const tags = state.tags || []
+    if (!q) return [...tags]
+    return tags.filter((t) => {
+      const tt = normalizeText(t)
+      const vv = normalizeText(state.values?.[t] || "")
+      return tt.includes(q) || vv.includes(q)
+    })
+  }
+
+  const refreshPaletteTagDatalist = (qRaw) => {
+    const dl = $("#paletteTags")
+    if (!dl) return
+    const filtered = getFilteredTags(qRaw)
+    dl.innerHTML = filtered.map((t) => `<option value="${escapeHtml(t)}"></option>`).join("")
+  }
+
+  if (tagInput && !isEdit) {
+    tagInput.addEventListener("input", () => refreshPaletteTagDatalist(tagInput.value))
+    refreshPaletteTagDatalist(tagInput.value || "")
+  }
+
   // ---- Tag quick palette (edit values / select tag to place) ----
   const renderTagQuick = () => {
     if (!tagQuickPane) return
-    const q = String(tagSearch?.value || "").trim().toLowerCase()
-    const tags = (state.tags || []).filter((t) => (q ? String(t).toLowerCase().includes(q) : true))
+    const q = String(tagSearch?.value || "")
+    const tags = getFilteredTags(q)
     const currentTag = String(tagInput?.value || "").trim()
     tagQuickPane.innerHTML = `
       <div class="badge">タグ一覧</div>
@@ -2870,6 +3351,7 @@ function openPlacePalette(pt, editFid = null) {
           const raw = String(inp.value || "").replaceAll("\r\n", "\n")
           const val = raw.replaceAll("\n", "<br>")
           state.values[t] = val
+          if (tagInput && !isEdit) refreshPaletteTagDatalist(tagInput.value)
           if (timer) clearTimeout(timer)
           timer = setTimeout(async () => {
             try {
@@ -2898,6 +3380,8 @@ function openPlacePalette(pt, editFid = null) {
     const raw = (valInput?.value || "").replaceAll("\r\n", "\n")
     const val = raw.replaceAll("\n", "<br>")
     const fontSize = Number(sizeInput?.value || "14") || 14
+    state.defaultFontSize = fontSize
+    window.pywebview?.api?.update_admin_settings?.({ default_font_size: fontSize })
     const color = String(colorInput?.value || "#0f172a").trim() || "#0f172a"
     const lineH = Number(lineHInput?.value || "1.2") || 1.2
     const letterS = Number(letterSInput?.value || "0") || 0
@@ -2918,13 +3402,16 @@ function openPlacePalette(pt, editFid = null) {
         }
         if (!r.ok) return alert(`追加に失敗: ${r.error || "unknown"}`)
         fid = r.fid
-        state.placements[fid] = { tag, page, x: pt.x, y: pt.y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS }
+        state.placements[fid] = { tag, page, x: pt.x, y: pt.y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS, writing_mode: writingMode }
+        if (window.pywebview?.api?.update_placement) {
+          await window.pywebview.api.update_placement(fid, { writing_mode: writingMode })
+        }
       } else {
         // Update existing element
         if (!fid) return alert("要素IDが不明です")
-        state.placements[fid] = { ...(state.placements[fid] || {}), tag, page, x: pt.x, y: pt.y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS }
+        state.placements[fid] = { ...(state.placements[fid] || {}), tag, page, x: pt.x, y: pt.y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS, writing_mode: writingMode }
         if (window.pywebview?.api?.update_placement) {
-          await window.pywebview.api.update_placement(fid, { tag, page, x: pt.x, y: pt.y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS })
+          await window.pywebview.api.update_placement(fid, { tag, page, x: pt.x, y: pt.y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS, writing_mode: writingMode })
         } else {
           await window.pywebview.api.set_element_pos(fid, pt.x, pt.y)
         }
@@ -3108,19 +3595,22 @@ async function boot() {
     console.error("loadWorkers failed:", e)
     state.workers = []
     state.workerId = null
-    state.gate = state.gate || { step: "choose", password: "", error: "" }
+    state.gate = state.gate || { error: "" }
     state.gate.error = "起動に失敗しました（作業者一覧の取得）。アプリを再起動してください。"
   }
-  // 起動時は必ずゲート画面（入力者/管理者の選択）へ。
-  // 管理者はパスワード入力が必須のため、ここでは ui_mode を復元しない。
-  state.appStage = "gate"
-  const lastRole = loadLocal("inputstudio-last-role", "worker")
-  state.gate.step = "choose"
-  state.uiMode = "worker"
-  if (lastRole === "admin") {
-    // “前回は管理者”でも自動ログインはしない（ただしボタン選択の誘導はできる）
-    state.gate.step = "choose"
+  try {
+    const r = await window.pywebview.api.get_admin_settings?.()
+    const s = r?.settings && typeof r.settings === "object" ? r.settings : {}
+    state.defaultFontSize = Number(s.default_font_size || 14) || 14
+    state.viewZoom = Number(s.view_zoom || 1.0) || 1.0
+  } catch {
+    state.defaultFontSize = 14
+    state.viewZoom = 1.0
   }
+  // 起動時は必ずゲート画面（PDF/プロジェクトの読み込み選択）へ
+  state.appStage = "gate"
+  state.gate = state.gate || { error: "" }
+  state.uiMode = "admin"
   render()
 }
 

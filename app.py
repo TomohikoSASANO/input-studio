@@ -3,22 +3,27 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import shutil
+import sys
+import traceback
 import time
 import uuid
 import zipfile
 import threading
+import ctypes
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import webview
 from pdf2image import convert_from_path
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.colors import HexColor
+from reportlab.lib.pagesizes import A4
 
 try:
     import fitz  # PyMuPDF (in-process PDF renderer)
@@ -26,20 +31,249 @@ except Exception:  # pragma: no cover
     fitz = None
 
 
+def _configure_pythonnet_coreclr() -> None:
+    """
+    Ensure Python.NET is loaded BEFORE importing pywebview.
+
+    Policy:
+    - Try netfx first (works on machines with .NET Framework and needs no dotnet root).
+    - If netfx fails, try coreclr (.NET Desktop Runtime). This requires dotnet root.
+    """
+    base = None
+    if hasattr(sys, "_MEIPASS"):
+        # In PyInstaller one-folder, this points to the bundled runtime directory (usually `_internal`).
+        base = Path(getattr(sys, "_MEIPASS"))  # type: ignore[arg-type]
+    else:
+        base = Path(__file__).resolve().parent
+
+    rc = base / "coreclr.runtimeconfig.json"
+    if not rc.exists():
+        # Fallback: next to executable (or in _internal next to it)
+        exe_dir = Path(sys.executable).resolve().parent
+        cand = exe_dir / "coreclr.runtimeconfig.json"
+        if cand.exists():
+            rc = cand
+        else:
+            cand2 = exe_dir / "_internal" / "coreclr.runtimeconfig.json"
+            if cand2.exists():
+                rc = cand2
+
+    # Import pythonnet lazily; if it's not bundled, raise a clear error.
+    try:
+        import pythonnet  # type: ignore
+    except Exception as e:
+        raise RuntimeError(f"pythonnet is missing or failed to import: {e}") from e
+
+    # 1) Try .NET Framework (netfx) first.
+    try:
+        pythonnet.load("netfx")
+        return
+    except Exception:
+        netfx_err = traceback.format_exc()
+
+    # 2) Fallback to CoreCLR (.NET Desktop Runtime)
+    def _find_dotnet_root() -> Path | None:
+        # Prefer explicit env if present
+        env = os.environ.get("DOTNET_ROOT") or os.environ.get("DOTNET_ROOT(x86)")
+        if env:
+            p = Path(env)
+            if p.is_dir():
+                return p
+        # Common install paths
+        for c in [
+            os.environ.get("ProgramFiles"),
+            os.environ.get("ProgramW6432"),
+        ]:
+            if c:
+                p = Path(c) / "dotnet"
+                if p.is_dir():
+                    return p
+        la = os.environ.get("LocalAppData")
+        if la:
+            p = Path(la) / "Microsoft" / "dotnet"
+            if p.is_dir():
+                return p
+        # dotnet on PATH
+        try:
+            import shutil as _shutil
+
+            d = _shutil.which("dotnet")
+            if d:
+                return Path(d).resolve().parent
+        except Exception:
+            pass
+        return None
+
+    dotnet_root = _find_dotnet_root()
+    if not dotnet_root:
+        raise RuntimeError(
+            "Failed to initialize .NET runtime.\n\n"
+            "Tried netfx first, but it failed. Then tried coreclr, but DOTNET_ROOT could not be determined.\n\n"
+            "Please install '.NET Desktop Runtime (x64)' and reboot.\n\n"
+            f"netfx error:\n{netfx_err}"
+        )
+
+    # For pythonnet+coreclr we pass params directly (more reliable than env-only).
+    if rc.exists():
+        pythonnet.load("coreclr", runtime_config=str(rc), dotnet_root=str(dotnet_root))
+    else:
+        # As a last resort, try coreclr with discovered dotnet root (will pick latest runtime).
+        pythonnet.load("coreclr", dotnet_root=str(dotnet_root))
+
+
+def _norm_writing_mode(v: Any) -> str:
+    s = str(v or "").strip().lower()
+    if s in ("vertical", "v", "tate", "縦", "縦書き"):
+        return "vertical"
+    return "horizontal"
+
+
+def _draw_vertical_text(
+    c: canvas.Canvas,
+    *,
+    x_pt: float,
+    y_top_pt: float,
+    text: str,
+    font_name: str,
+    fs_pt: float,
+    line_h: float,
+    letter_s_pt: float,
+) -> None:
+    """
+    Simple tategaki approximation:
+    - splitlines() => columns (right to left)
+    - each character is drawn downwards
+    - ASCII chars are rotated 90deg for readability
+    """
+    c.setFont(font_name, fs_pt)
+
+    # vertical step (down)
+    leading = float(fs_pt) * float(line_h or 1.2)
+    step_y = leading + float(letter_s_pt or 0.0)
+    # column step (left)
+    step_x = float(fs_pt) * 1.10 + float(letter_s_pt or 0.0)
+
+    cols = str(text or "").splitlines() or [""]
+    # baseline: convert top anchor to a usable baseline for drawString.
+    # Slight extra downward shift keeps PDF output aligned with preview PNG text box.
+    baseline_shift_em = PDF_BASELINE_SHIFT_EM
+    try:
+        ascent = float(pdfmetrics.getAscent(font_name) or 0) / 1000.0 * fs_pt
+    except Exception:
+        ascent = fs_pt * 0.8
+    y0 = float(y_top_pt) - float(ascent) - (baseline_shift_em * float(fs_pt))
+
+    for col_idx, col in enumerate(cols):
+        cx = float(x_pt) - (col_idx * step_x)  # vertical-rl
+        cy = float(y0)
+        for ch in col:
+            if ch == "\r":
+                continue
+            if ch == " ":
+                cy -= step_y
+                continue
+            if ord(ch) < 128:
+                c.saveState()
+                c.translate(cx, cy)
+                c.rotate(90)
+                c.setFont(font_name, fs_pt)
+                c.drawString(0, -fs_pt * 0.3, ch)
+                c.restoreState()
+            else:
+                c.setFont(font_name, fs_pt)
+                c.drawString(cx, cy, ch)
+            cy -= step_y
+
+
 ROOT = Path(__file__).resolve().parent
 UI_DIR = ROOT / "ui"
-LOCAL = ROOT / "_local_data"
+
+
+def _default_local_data_dir() -> Path:
+    """
+    Store user data under LocalAppData so it survives app updates.
+    Windows: %LOCALAPPDATA%/InputStudio/_local_data
+    """
+    base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+    if base:
+        return Path(base) / "InputStudio" / "_local_data"
+    return Path.home() / "AppData" / "Local" / "InputStudio" / "_local_data"
+
+
+# Allow override for development/testing
+LOCAL = Path(os.environ.get("INPUTSTUDIO_LOCAL_DIR") or _default_local_data_dir())
 PROJECTS_DIR = LOCAL / "projects"
 WORKERS_PATH = LOCAL / "workers.json"
 ADMIN_SETTINGS_PATH = LOCAL / "admin_settings.json"
 
+# Bundled font (for preview PNG + PDF export). Included via PyInstaller spec.
+RESOURCE_ROOT = Path(getattr(sys, "_MEIPASS", str(ROOT)))  # type: ignore[arg-type]
+BUNDLED_FONT_PATH = (RESOURCE_ROOT / "assets" / "fonts" / "NotoSansJP-Regular.ttf").resolve()
+
 # Render DPI for preview images and coordinate system in this app.
 RENDER_DPI = 150
+PDF_BASELINE_SHIFT_EM = 0.26
+PDF_LETTER_SPACING_FACTOR = 0.72
+DEFAULT_LETTER_SPACING = 1.2
 
 
 def _ensure_dirs() -> None:
+    _migrate_legacy_local_data_if_needed()
     LOCAL.mkdir(parents=True, exist_ok=True)
     PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _legacy_local_dirs() -> list[Path]:
+    exe_dir = Path(sys.executable).resolve().parent
+    return [
+        ROOT / "_local_data",
+        exe_dir / "_local_data",
+        exe_dir / "_internal" / "_local_data",
+        ROOT / "_internal" / "_local_data",
+    ]
+
+
+def _dir_looks_nonempty(p: Path) -> bool:
+    try:
+        if not p.exists() or not p.is_dir():
+            return False
+        if (p / "admin_settings.json").exists() or (p / "workers.json").exists():
+            return True
+        d = p / "projects"
+        return d.exists() and any(d.iterdir())
+    except Exception:
+        return False
+
+
+def _migrate_legacy_local_data_if_needed() -> None:
+    """
+    One-time best-effort migration:
+    If new LOCAL is empty but a legacy dir has data, copy it over.
+    """
+    # If user explicitly overrides local dir, do not auto-migrate.
+    if os.environ.get("INPUTSTUDIO_LOCAL_DIR"):
+        return
+    try:
+        dst = LOCAL
+        dst.mkdir(parents=True, exist_ok=True)
+        if _dir_looks_nonempty(dst):
+            return
+        for src in _legacy_local_dirs():
+            if src.resolve() == dst.resolve():
+                continue
+            if not _dir_looks_nonempty(src):
+                continue
+            for item in src.iterdir():
+                target = dst / item.name
+                if target.exists():
+                    continue
+                if item.is_dir():
+                    shutil.copytree(item, target, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(item, target)
+            return
+    except Exception:
+        return
 
 
 def _read_json(path: Path, default: Any) -> Any:
@@ -231,6 +465,23 @@ class Api:
                         changed = True
             data["tags"] = tags_list
 
+            # writing_mode default
+            placements1 = data.get("placements") if isinstance(data.get("placements"), dict) else {}
+            for _, pl in placements1.items():
+                if not isinstance(pl, dict):
+                    continue
+                wm = _norm_writing_mode(pl.get("writing_mode"))
+                if pl.get("writing_mode") != wm:
+                    pl["writing_mode"] = wm
+                    changed = True
+
+            if changed:
+                data["updated_at"] = _now_iso()
+                try:
+                    _write_json(p, data)
+                except Exception:
+                    pass
+
             self._project = LoadedProject(path=p, data=data)
             self._last_project_path = str(p)
             self._ui_mode = str(data.get("ui_mode") or "worker")
@@ -414,15 +665,24 @@ class Api:
                     if sz in font_cache:
                         return font_cache[sz]
                     try:
-                        # Japanese text needs a JP-capable font; prefer Windows built-ins.
-                        candidates = [
-                            r"C:\Windows\Fonts\meiryo.ttc",
-                            r"C:\Windows\Fonts\YuGothR.ttc",
-                            r"C:\Windows\Fonts\YuGothM.ttc",
-                            r"C:\Windows\Fonts\msgothic.ttc",
-                            r"C:\Windows\Fonts\msmincho.ttc",
-                            "arial.ttf",
-                        ]
+                        # Prefer bundled font (ensures preview matches PDF export).
+                        candidates = []
+                        try:
+                            if BUNDLED_FONT_PATH and BUNDLED_FONT_PATH.exists():
+                                candidates.append(str(BUNDLED_FONT_PATH))
+                        except Exception:
+                            pass
+                        # Fallback: Windows built-ins.
+                        candidates.extend(
+                            [
+                                r"C:\Windows\Fonts\meiryo.ttc",
+                                r"C:\Windows\Fonts\YuGothR.ttc",
+                                r"C:\Windows\Fonts\YuGothM.ttc",
+                                r"C:\Windows\Fonts\msgothic.ttc",
+                                r"C:\Windows\Fonts\msmincho.ttc",
+                                "arial.ttf",
+                            ]
+                        )
                         f = None
                         for fp in candidates:
                             try:
@@ -482,6 +742,61 @@ class Api:
                         draw2.text((cx, cy), line, fill=fill, font=fnt)
                     cy += float(fs) * float(line_h)
 
+            def _is_ascii(ch: str) -> bool:
+                try:
+                    return ord(ch) < 128
+                except Exception:
+                    return False
+
+            def _draw_text_vertical(draw2: Any, x: float, y: float, text: str, fs: int, fill: tuple[int, int, int, int], line_h: float, letter_s: float) -> None:
+                """
+                Simple tategaki for preview PNG:
+                - splitlines() => columns (right to left)
+                - characters stacked downward
+                - ASCII chars are rotated 90deg
+                """
+                fnt = font(fs)
+                step_y = float(fs) * float(line_h) + float(letter_s or 0.0)
+                step_x = float(fs) * 1.10 + float(letter_s or 0.0)
+
+                cols = str(text or "").split("\n")
+                if not cols:
+                    cols = [""]
+
+                # Use RGBA compositing for rotated ASCII.
+                try:
+                    from PIL import Image
+                except Exception:
+                    Image = None  # type: ignore
+
+                for col_idx, col in enumerate(cols):
+                    cx = float(x) - (col_idx * step_x)
+                    cy = float(y)
+                    for ch in str(col or ""):
+                        if ch == "\r":
+                            continue
+                        if ch == " ":
+                            cy += step_y
+                            continue
+                        if _is_ascii(ch) and Image is not None and fnt is not None:
+                            # draw rotated glyph onto temporary image then paste
+                            pad = int(max(2, fs * 0.2))
+                            tmp = Image.new("RGBA", (fs + pad * 2, fs + pad * 2), (0, 0, 0, 0))
+                            td = ImageDraw.Draw(tmp)
+                            td.text((pad, pad), ch, fill=fill, font=fnt)
+                            rot = tmp.rotate(90, expand=True)
+                            try:
+                                img0 = draw2.im  # PIL internal
+                                img0.alpha_composite(rot, (int(cx), int(cy)))
+                            except Exception:
+                                try:
+                                    draw2.bitmap((cx, cy), rot)
+                                except Exception:
+                                    draw2.text((cx, cy), ch, fill=fill, font=fnt)
+                        else:
+                            draw2.text((cx, cy), ch, fill=fill, font=fnt)
+                        cy += step_y
+
             placements = dict(self._project.data.get("placements") or {})
             values = dict(self._project.data.get("values") or {})
             for _, p in placements.items():
@@ -500,8 +815,12 @@ class Api:
                 fs = int(p.get("font_size") or 14)
                 color = _hex_to_rgba(str(p.get("color") or "#0f172a"))
                 line_h = float(p.get("line_height") or 1.2)
-                letter_s = float(p.get("letter_spacing") or 0)
-                _draw_text(draw, x, y, text, fs, color, line_h, letter_s)
+                letter_s = float(p.get("letter_spacing") or DEFAULT_LETTER_SPACING)
+                writing_mode = _norm_writing_mode(p.get("writing_mode"))
+                if writing_mode == "vertical":
+                    _draw_text_vertical(draw, x, y, text, fs, color, line_h, letter_s)
+                else:
+                    _draw_text(draw, x, y, text, fs, color, line_h, letter_s)
         except Exception:
             pass
 
@@ -756,6 +1075,238 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    def copy_page_with_elements(self, page_index: int) -> dict[str, Any]:
+        """Duplicate one page in template PDF and duplicate placements on that page."""
+        if not self._project and not self._ensure_project_loaded():
+            return {"ok": False, "error": "no_project"}
+        try:
+            dst_pdf = self._pdf_path()
+            reader = PdfReader(str(dst_pdf))
+            total = len(reader.pages)
+            if total <= 0:
+                return {"ok": False, "error": "no_pages"}
+            idx = max(0, min(total - 1, int(page_index or 0)))
+
+            try:
+                if self._fitz_doc is not None:
+                    self._fitz_doc.close()
+            except Exception:
+                pass
+            self._fitz_doc = None
+            self._fitz_pdf_path = None
+
+            writer = PdfWriter()
+            for i, pg in enumerate(reader.pages):
+                writer.add_page(pg)
+                if i == idx:
+                    writer.add_page(pg)
+
+            tmp = dst_pdf.with_suffix(".pdf.tmp")
+            with open(tmp, "wb") as f:
+                writer.write(f)
+            os.replace(tmp, dst_pdf)
+
+            data = self._project.data
+            placements = dict(data.get("placements") or {})
+            out: dict[str, Any] = {}
+            for fid, pl in placements.items():
+                if not isinstance(pl, dict):
+                    continue
+                p = int(pl.get("page") or 0)
+                base = dict(pl)
+                if p > idx:
+                    base["page"] = p + 1
+                out[str(fid)] = base
+                if p == idx:
+                    nf = f"f_{uuid.uuid4().hex[:8]}"
+                    cp = dict(pl)
+                    cp["page"] = idx + 1
+                    out[nf] = cp
+            data["placements"] = out
+            data["updated_at"] = _now_iso()
+            _write_json(self._project.path, data)
+
+            try:
+                if fitz is not None:
+                    self._fitz_doc = fitz.open(str(dst_pdf))
+                    self._fitz_pdf_path = str(dst_pdf)
+                    self._page_count = max(1, int(self._fitz_doc.page_count))
+                else:
+                    self._page_count = max(1, int(len(PdfReader(str(dst_pdf)).pages)))
+            except Exception:
+                self._fitz_doc = None
+                self._fitz_pdf_path = None
+                self._page_count = max(1, total + 1)
+
+            self._invalidate_pages(None)
+            return {
+                "ok": True,
+                "page_count": int(self._page_count),
+                "page_index": int(idx + 1),
+                "placements": dict(data.get("placements") or {}),
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def delete_page_from_project(self, page_index: int) -> dict[str, Any]:
+        """Delete one page from template PDF and remove/shift related placements."""
+        if not self._project and not self._ensure_project_loaded():
+            return {"ok": False, "error": "no_project"}
+        try:
+            dst_pdf = self._pdf_path()
+            reader = PdfReader(str(dst_pdf))
+            total = len(reader.pages)
+            if total <= 1:
+                return {"ok": False, "error": "cannot_delete_last_page"}
+            idx = max(0, min(total - 1, int(page_index or 0)))
+
+            try:
+                if self._fitz_doc is not None:
+                    self._fitz_doc.close()
+            except Exception:
+                pass
+            self._fitz_doc = None
+            self._fitz_pdf_path = None
+
+            writer = PdfWriter()
+            for i, pg in enumerate(reader.pages):
+                if i == idx:
+                    continue
+                writer.add_page(pg)
+
+            tmp = dst_pdf.with_suffix(".pdf.tmp")
+            with open(tmp, "wb") as f:
+                writer.write(f)
+            os.replace(tmp, dst_pdf)
+
+            data = self._project.data
+            placements = dict(data.get("placements") or {})
+            out: dict[str, Any] = {}
+            for fid, pl in placements.items():
+                if not isinstance(pl, dict):
+                    continue
+                p = int(pl.get("page") or 0)
+                if p == idx:
+                    continue
+                item = dict(pl)
+                if p > idx:
+                    item["page"] = p - 1
+                out[str(fid)] = item
+            data["placements"] = out
+
+            # Remove tags/values that became unused.
+            still_used = {str(pl.get("tag") or "").strip() for pl in out.values() if isinstance(pl, dict)}
+            tags0 = [str(t).strip() for t in (data.get("tags") or []) if str(t).strip()]
+            data["tags"] = [t for t in tags0 if t in still_used]
+            values = dict(data.get("values") or {})
+            for t in list(values.keys()):
+                if str(t).strip() not in still_used:
+                    values.pop(t, None)
+            data["values"] = values
+            data["updated_at"] = _now_iso()
+            _write_json(self._project.path, data)
+
+            try:
+                if fitz is not None:
+                    self._fitz_doc = fitz.open(str(dst_pdf))
+                    self._fitz_pdf_path = str(dst_pdf)
+                    self._page_count = max(1, int(self._fitz_doc.page_count))
+                else:
+                    self._page_count = max(1, int(len(PdfReader(str(dst_pdf)).pages)))
+            except Exception:
+                self._fitz_doc = None
+                self._fitz_pdf_path = None
+                self._page_count = max(1, total - 1)
+
+            self._invalidate_pages(None)
+            next_idx = max(0, min(int(self._page_count) - 1, idx))
+            return {
+                "ok": True,
+                "page_count": int(self._page_count),
+                "page_index": int(next_idx),
+                "tags": list(data.get("tags") or []),
+                "values": dict(data.get("values") or {}),
+                "placements": dict(data.get("placements") or {}),
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def reorder_pages(self, order: list[int]) -> dict[str, Any]:
+        """Reorder template PDF pages and remap placement page indices."""
+        if not self._project and not self._ensure_project_loaded():
+            return {"ok": False, "error": "no_project"}
+        try:
+            if not isinstance(order, list):
+                return {"ok": False, "error": "invalid_order"}
+            dst_pdf = self._pdf_path()
+            reader = PdfReader(str(dst_pdf))
+            total = len(reader.pages)
+            if total <= 0:
+                return {"ok": False, "error": "no_pages"}
+
+            normalized: list[int] = []
+            for x in order:
+                try:
+                    normalized.append(int(x))
+                except Exception:
+                    return {"ok": False, "error": "invalid_order"}
+            if len(normalized) != total or len(set(normalized)) != total:
+                return {"ok": False, "error": "invalid_order"}
+            if min(normalized) < 0 or max(normalized) >= total:
+                return {"ok": False, "error": "invalid_order"}
+
+            try:
+                if self._fitz_doc is not None:
+                    self._fitz_doc.close()
+            except Exception:
+                pass
+            self._fitz_doc = None
+            self._fitz_pdf_path = None
+
+            writer = PdfWriter()
+            for old_idx in normalized:
+                writer.add_page(reader.pages[int(old_idx)])
+            tmp = dst_pdf.with_suffix(".pdf.tmp")
+            with open(tmp, "wb") as f:
+                writer.write(f)
+            os.replace(tmp, dst_pdf)
+
+            # remap placements page index: old -> new
+            old_to_new = {int(old): int(new) for new, old in enumerate(normalized)}
+            data = self._project.data
+            placements = dict(data.get("placements") or {})
+            for fid, pl in placements.items():
+                if not isinstance(pl, dict):
+                    continue
+                old_page = int(pl.get("page") or 0)
+                if old_page in old_to_new:
+                    pl["page"] = old_to_new[old_page]
+                    placements[fid] = pl
+            data["placements"] = placements
+            data["updated_at"] = _now_iso()
+            _write_json(self._project.path, data)
+
+            try:
+                if fitz is not None:
+                    self._fitz_doc = fitz.open(str(dst_pdf))
+                    self._fitz_pdf_path = str(dst_pdf)
+                    self._page_count = max(1, int(self._fitz_doc.page_count))
+                else:
+                    self._page_count = max(1, int(len(PdfReader(str(dst_pdf)).pages)))
+            except Exception:
+                self._fitz_doc = None
+                self._fitz_pdf_path = None
+                self._page_count = max(1, total)
+
+            self._invalidate_pages(None)
+            return {
+                "ok": True,
+                "page_count": int(self._page_count),
+                "placements": dict(data.get("placements") or {}),
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # --- mode / workers ---
     def set_ui_mode(self, mode: str) -> dict[str, Any]:
         m = str(mode or "")
@@ -771,7 +1322,30 @@ class Api:
         s = _read_json(ADMIN_SETTINGS_PATH, {"ui_mode": "worker"})
         if not isinstance(s, dict):
             s = {"ui_mode": "worker"}
+        # Backward-compatible defaults (old settings files may not have these keys).
+        if "default_font_size" not in s:
+            s["default_font_size"] = 14
+        if "view_zoom" not in s:
+            s["view_zoom"] = 1.0
         return {"ok": True, "settings": s}
+
+    def update_admin_settings(self, patch: dict[str, Any]) -> dict[str, Any]:
+        """
+        Merge/overwrite admin settings keys.
+        Backward compatible: only adds optional keys; does not change existing meanings.
+        """
+        try:
+            cur = _read_json(ADMIN_SETTINGS_PATH, {"ui_mode": "worker"})
+            if not isinstance(cur, dict):
+                cur = {"ui_mode": "worker"}
+            if not isinstance(patch, dict):
+                return {"ok": False, "error": "invalid_patch"}
+            for k, v in patch.items():
+                cur[str(k)] = v
+            _write_json(ADMIN_SETTINGS_PATH, cur)
+            return {"ok": True, "settings": cur}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
     def get_workers(self) -> dict[str, Any]:
         rows = _read_json(WORKERS_PATH, [])
@@ -866,7 +1440,8 @@ class Api:
             "font_size": int(font_size or 14),
             "color": "#0f172a",
             "line_height": 1.2,
-            "letter_spacing": 0,
+            "letter_spacing": DEFAULT_LETTER_SPACING,
+            "writing_mode": "horizontal",
         }
         data["placements"] = placements
         _write_json(self._project.path, data)
@@ -881,7 +1456,17 @@ class Api:
             return {"ok": False, "error": "missing_id"}
         placements = dict(self._project.data.get("placements") or {})
         if f not in placements or not isinstance(placements.get(f), dict):
-            placements[f] = {"tag": "", "page": 0, "x": float(x), "y": float(y), "font_size": 14, "color": "#0f172a", "line_height": 1.2, "letter_spacing": 0}
+            placements[f] = {
+                "tag": "",
+                "page": 0,
+                "x": float(x),
+                "y": float(y),
+                "font_size": 14,
+                "color": "#0f172a",
+                "line_height": 1.2,
+                "letter_spacing": DEFAULT_LETTER_SPACING,
+                "writing_mode": "horizontal",
+            }
         else:
             placements[f]["x"] = float(x)
             placements[f]["y"] = float(y)
@@ -960,6 +1545,8 @@ class Api:
                 pl[k] = float(v)
             elif k in ("tag",):
                 pl[k] = str(v)
+            elif k in ("writing_mode",):
+                pl[k] = _norm_writing_mode(v)
         placements[f] = pl
         self._project.data["placements"] = placements
         _write_json(self._project.path, self._project.data)
@@ -1105,19 +1692,25 @@ class Api:
         placements = dict(self._project.data.get("placements") or {})
         values = dict(self._project.data.get("values") or {})
 
-        # Ensure Japanese-capable font for PDF export.
+        # Prefer bundled TTF so preview(Pillow) and export(PDF) match.
+        bundled_font_name = "InputStudioFont"
+        pdf_font = "Helvetica"
         try:
-            from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-
-            pdfmetrics.registerFont(UnicodeCIDFont("HeiseiKakuGo-W5"))
-            jp_font = "HeiseiKakuGo-W5"
+            if BUNDLED_FONT_PATH and BUNDLED_FONT_PATH.exists():
+                pdfmetrics.registerFont(TTFont(bundled_font_name, str(BUNDLED_FONT_PATH)))
+                pdf_font = bundled_font_name
         except Exception:
-            jp_font = "Helvetica"
+            pdf_font = "Helvetica"
 
-        import re
+        # Fallback Japanese CID font (if bundled font is unavailable)
+        if pdf_font == "Helvetica":
+            try:
+                from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 
-        def _needs_jp(s: str) -> bool:
-            return bool(re.search(r"[\u3040-\u30ff\u3400-\u9fff\u3000-\u303f\uff00-\uffef]", s or ""))
+                pdfmetrics.registerFont(UnicodeCIDFont("HeiseiKakuGo-W5"))
+                pdf_font = "HeiseiKakuGo-W5"
+            except Exception:
+                pdf_font = "Helvetica"
 
         writer = PdfWriter()
         for pi, page in enumerate(reader.pages):
@@ -1130,8 +1723,12 @@ class Api:
             lly = float(getattr(crop, "lower_left", (0, 0))[1])
             crop_w_pt = float(crop.width)
             crop_h_pt = float(crop.height)
-            crop_w_px = max(1, int(round(crop_w_pt / 72.0 * RENDER_DPI)))
-            crop_h_px = max(1, int(round(crop_h_pt / 72.0 * RENDER_DPI)))
+            # Use the same pixel rounding as the preview renderer to avoid drift.
+            try:
+                crop_w_px, crop_h_px = self._page_image_size(pi)
+            except Exception:
+                crop_w_px = max(1, int(round(crop_w_pt / 72.0 * RENDER_DPI)))
+                crop_h_px = max(1, int(round(crop_h_pt / 72.0 * RENDER_DPI)))
 
             import io
 
@@ -1162,12 +1759,14 @@ class Api:
                 fs_px = float(p.get("font_size") or 14)
                 color = str(p.get("color") or "#0f172a")
                 line_h = float(p.get("line_height") or 1.2)
-                letter_s_px = float(p.get("letter_spacing") or 0)
+                letter_s_px = float(p.get("letter_spacing") or DEFAULT_LETTER_SPACING)
 
                 x_pt = llx + (x_px / float(crop_w_px)) * crop_w_pt
                 y_top_pt = lly + crop_h_pt - ((y_px / float(crop_h_px)) * crop_h_pt)
 
-                font_name = jp_font if _needs_jp(text) else "Helvetica"
+                # Keep the same font family for all glyphs when possible
+                # so preview(Pillow) and export(PDF) line wrapping stay close.
+                font_name = pdf_font
                 fs_pt = float(fs_px) * 72.0 / RENDER_DPI
                 c.setFont(font_name, fs_pt)
                 try:
@@ -1175,13 +1774,14 @@ class Api:
                 except Exception:
                     c.setFillColor(HexColor("#0f172a"))
 
-                # baseline adjust
+                # baseline adjust (top-anchor in UI -> baseline in PDF)
+                baseline_shift_em = PDF_BASELINE_SHIFT_EM
                 try:
                     ascent = float(pdfmetrics.getAscent(font_name) or 0) / 1000.0 * fs_pt
                 except Exception:
                     ascent = fs_pt * 0.8
-                y_base0 = y_top_pt - ascent - (0.08 * fs_pt)
-                letter_s_pt = float(letter_s_px) * 72.0 / RENDER_DPI
+                y_base0 = y_top_pt - ascent - (baseline_shift_em * fs_pt)
+                letter_s_pt = float(letter_s_px) * 72.0 / RENDER_DPI * PDF_LETTER_SPACING_FACTOR
 
                 def _draw_line_with_spacing(x0: float, y0: float, s: str) -> None:
                     if not letter_s_pt:
@@ -1196,9 +1796,22 @@ class Api:
                             w = fs_pt * 0.62
                         cx += float(w) + float(letter_s_pt)
 
-                for line_idx, line in enumerate(text.splitlines() or [""]):
-                    y_line = y_base0 - (fs_pt * line_h) * line_idx
-                    _draw_line_with_spacing(x_pt, y_line, line)
+                writing_mode = _norm_writing_mode(p.get("writing_mode"))
+                if writing_mode == "vertical":
+                    _draw_vertical_text(
+                        c,
+                        x_pt=x_pt,
+                        y_top_pt=y_top_pt,
+                        text=text,
+                        font_name=font_name,
+                        fs_pt=fs_pt,
+                        line_h=line_h,
+                        letter_s_pt=letter_s_pt,
+                    )
+                else:
+                    for line_idx, line in enumerate(text.splitlines() or [""]):
+                        y_line = y_base0 - (fs_pt * line_h) * line_idx
+                        _draw_line_with_spacing(x_pt, y_line, line)
 
             c.save()
             packet.seek(0)
@@ -1210,7 +1823,257 @@ class Api:
         with out_pdf.open("wb") as f:
             writer.write(f)
 
-    def finish(self) -> dict[str, Any]:
+    def _render_report_pdf(self, out_pdf: Path, meta: dict[str, Any]) -> None:
+        """
+        Create a simple report PDF for sharing/administration.
+        Contains:
+        - worker info (name/bank/hourly)
+        - project info
+        - work time summary
+        - counts (total tags / filled tags / placements)
+        - (optional) tag/value list
+        """
+        if not self._project:
+            raise RuntimeError("no_project")
+
+        # Font (match preview as much as possible)
+        font_name = "Helvetica"
+        try:
+            if BUNDLED_FONT_PATH and BUNDLED_FONT_PATH.exists():
+                pdfmetrics.registerFont(TTFont("InputStudioFont", str(BUNDLED_FONT_PATH)))
+                font_name = "InputStudioFont"
+        except Exception:
+            font_name = "Helvetica"
+        if font_name == "Helvetica":
+            try:
+                from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+
+                pdfmetrics.registerFont(UnicodeCIDFont("HeiseiKakuGo-W5"))
+                font_name = "HeiseiKakuGo-W5"
+            except Exception:
+                font_name = "Helvetica"
+
+        def _fmt_sec(s: Any) -> str:
+            try:
+                sec = int(float(s))
+            except Exception:
+                sec = 0
+            if sec < 0:
+                sec = 0
+            hh = sec // 3600
+            mm = (sec % 3600) // 60
+            ss = sec % 60
+            return f"{hh:02d}:{mm:02d}:{ss:02d}"
+
+        def _wrap(s: str, max_chars: int) -> list[str]:
+            s = str(s or "")
+            out: list[str] = []
+            cur = ""
+            for ch in s:
+                if ch == "\r":
+                    continue
+                if ch == "\n":
+                    out.append(cur)
+                    cur = ""
+                    continue
+                cur += ch
+                if len(cur) >= max_chars:
+                    out.append(cur)
+                    cur = ""
+            if cur:
+                out.append(cur)
+            return out or [""]
+
+        project_name = str(self._project.data.get("project") or "")
+        project_path = str(self._project.path)
+        values = dict(self._project.data.get("values") or {})
+        tags = [str(t) for t in (self._project.data.get("tags") or []) if str(t).strip()]
+        placements = dict(self._project.data.get("placements") or {})
+
+        # counts
+        def _val_for(t: str) -> str:
+            return str(values.get(t) or "").replace("<br>", "\n")
+
+        filled_count = int(meta.get("filled_count")) if str(meta.get("filled_count", "")).strip() else 0
+        if filled_count <= 0:
+            filled_count = sum(1 for t in tags if _val_for(t).strip())
+        total_tags = int(meta.get("total_tags")) if str(meta.get("total_tags", "")).strip() else len(tags)
+        empty_count = max(0, int(total_tags) - int(filled_count))
+        placement_count = int(meta.get("placement_count")) if str(meta.get("placement_count", "")).strip() else len(placements)
+
+        worker_id = str(meta.get("worker_id") or self._working_worker_id or "").strip()
+        worker_name = str(meta.get("worker_name") or "").strip()
+        bank = ""
+        hourly_yen = 0
+        try:
+            rows = _read_json(WORKERS_PATH, [])
+            if isinstance(rows, list):
+                for r in rows:
+                    if isinstance(r, dict) and str(r.get("id") or "").strip() == worker_id:
+                        if not worker_name:
+                            worker_name = str(r.get("name") or "").strip()
+                        bank = str(r.get("bank") or "").strip()
+                        try:
+                            hourly_yen = int(r.get("hourly_yen") or 0)
+                        except Exception:
+                            hourly_yen = 0
+                        break
+        except Exception:
+            pass
+
+        start_iso = str(meta.get("start_iso") or "").strip()
+        end_iso = str(meta.get("end_iso") or "").strip()
+        duration_sec = meta.get("duration_sec", 0)
+        private_sec = meta.get("private_sec", 0)
+
+        out_pdf.parent.mkdir(parents=True, exist_ok=True)
+        c = canvas.Canvas(str(out_pdf), pagesize=A4)
+        w, h = A4
+        margin_x = 36
+        y = h - 42
+
+        def hline() -> None:
+            nonlocal y
+            y -= 6
+            c.setStrokeColor(HexColor("#e5e7eb"))
+            c.line(margin_x, y, w - margin_x, y)
+            y -= 10
+
+        c.setFillColor(HexColor("#0f172a"))
+        c.setFont(font_name, 16)
+        c.drawString(margin_x, y, "作業報告書")
+        y -= 22
+        c.setFont(font_name, 10)
+        c.setFillColor(HexColor("#475569"))
+        c.drawString(margin_x, y, f"生成日時: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        y -= 14
+        hline()
+
+        c.setFillColor(HexColor("#0f172a"))
+        c.setFont(font_name, 11)
+        c.drawString(margin_x, y, "■ 作業者")
+        y -= 16
+        c.setFont(font_name, 10)
+        for lab, val in [
+            ("作業者ID", worker_id or "-"),
+            ("氏名", worker_name or "-"),
+            ("銀行", bank or "-"),
+            ("時給(参考)", f"{hourly_yen:,} 円/h" if hourly_yen else "-"),
+        ]:
+            c.setFillColor(HexColor("#334155"))
+            c.drawString(margin_x, y, f"{lab}:")
+            c.setFillColor(HexColor("#0f172a"))
+            c.drawString(margin_x + 84, y, str(val))
+            y -= 14
+        y -= 2
+        hline()
+
+        c.setFillColor(HexColor("#0f172a"))
+        c.setFont(font_name, 11)
+        c.drawString(margin_x, y, "■ 案件")
+        y -= 16
+        c.setFont(font_name, 10)
+        for lab, val in [
+            ("案件名", project_name or "-"),
+            ("プロジェクト", project_path or "-"),
+        ]:
+            c.setFillColor(HexColor("#334155"))
+            c.drawString(margin_x, y, f"{lab}:")
+            c.setFillColor(HexColor("#0f172a"))
+            # wrap long path
+            lines = _wrap(str(val), 60)
+            c.drawString(margin_x + 84, y, lines[0])
+            y -= 14
+            for extra in lines[1:]:
+                c.drawString(margin_x + 84, y, extra)
+                y -= 14
+        y -= 2
+        hline()
+
+        c.setFillColor(HexColor("#0f172a"))
+        c.setFont(font_name, 11)
+        c.drawString(margin_x, y, "■ 作業時間")
+        y -= 16
+        c.setFont(font_name, 10)
+        for lab, val in [
+            ("開始", start_iso or "-"),
+            ("終了", end_iso or "-"),
+            ("正味時間", _fmt_sec(duration_sec)),
+            ("中断(私用)合計", _fmt_sec(private_sec)),
+        ]:
+            c.setFillColor(HexColor("#334155"))
+            c.drawString(margin_x, y, f"{lab}:")
+            c.setFillColor(HexColor("#0f172a"))
+            c.drawString(margin_x + 84, y, str(val))
+            y -= 14
+        y -= 2
+        hline()
+
+        c.setFillColor(HexColor("#0f172a"))
+        c.setFont(font_name, 11)
+        c.drawString(margin_x, y, "■ 入力集計")
+        y -= 16
+        c.setFont(font_name, 10)
+        for lab, val in [
+            ("項目数", f"{int(total_tags)}"),
+            ("入力済み", f"{int(filled_count)}"),
+            ("未入力", f"{int(empty_count)}"),
+            ("要素数(配置)", f"{int(placement_count)}"),
+        ]:
+            c.setFillColor(HexColor("#334155"))
+            c.drawString(margin_x, y, f"{lab}:")
+            c.setFillColor(HexColor("#0f172a"))
+            c.drawString(margin_x + 84, y, str(val))
+            y -= 14
+
+        # Next pages: value list (optional)
+        y -= 8
+        c.showPage()
+        c.setFont(font_name, 12)
+        c.setFillColor(HexColor("#0f172a"))
+        c.drawString(margin_x, h - 42, "入力内容（タグ別）")
+        y = h - 66
+        c.setFont(font_name, 9)
+        c.setFillColor(HexColor("#334155"))
+        c.drawString(margin_x, y, "タグ")
+        c.drawString(margin_x + 180, y, "値（改行は / で表示、長い場合は省略）")
+        y -= 10
+        c.setStrokeColor(HexColor("#e5e7eb"))
+        c.line(margin_x, y, w - margin_x, y)
+        y -= 12
+
+        def _one_line(v: str) -> str:
+            s = str(v or "").replace("<br>", "\n")
+            s = " / ".join([x.strip() for x in s.splitlines() if x.strip()])
+            if len(s) > 80:
+                return s[:77] + "..."
+            return s
+
+        for t in tags:
+            if y < 64:
+                c.showPage()
+                c.setFont(font_name, 12)
+                c.setFillColor(HexColor("#0f172a"))
+                c.drawString(margin_x, h - 42, "入力内容（タグ別）")
+                y = h - 66
+                c.setFont(font_name, 9)
+                c.setFillColor(HexColor("#334155"))
+                c.drawString(margin_x, y, "タグ")
+                c.drawString(margin_x + 180, y, "値（改行は / で表示、長い場合は省略）")
+                y -= 10
+                c.setStrokeColor(HexColor("#e5e7eb"))
+                c.line(margin_x, y, w - margin_x, y)
+                y -= 12
+            c.setFont(font_name, 9)
+            c.setFillColor(HexColor("#0f172a"))
+            c.drawString(margin_x, y, t[:28])
+            c.setFillColor(HexColor("#334155"))
+            c.drawString(margin_x + 180, y, _one_line(values.get(t) or ""))
+            y -= 12
+
+        c.save()
+
+    def finish(self, report_meta: dict[str, Any] | None = None) -> dict[str, Any]:
         if not self._project and not self._ensure_project_loaded():
             return {"ok": False, "error": "no_project"}
         try:
@@ -1232,22 +2095,92 @@ class Api:
                 except Exception:
                     pass
 
+            # ---- bundle for sharing (PDF + project data in same folder) ----
+            bundle_dir = out_dir / base
+            bundle_dir.mkdir(parents=True, exist_ok=True)
+            # Copy project.json and template.pdf so another PC can open/edit this project.
+            try:
+                shutil.copy2(self._project.path, bundle_dir / "project.json")
+            except Exception:
+                pass
+            try:
+                shutil.copy2(self._pdf_path(), bundle_dir / "template.pdf")
+            except Exception:
+                pass
+            try:
+                shutil.copy2(out_pdf, bundle_dir / out_pdf.name)
+            except Exception:
+                pass
+            # Report PDF
+            report_path = bundle_dir / "report.pdf"
+            try:
+                meta = report_meta if isinstance(report_meta, dict) else {}
+                # augment meta with worker name if missing
+                if self._working_worker_id and "worker_id" not in meta:
+                    meta["worker_id"] = self._working_worker_id
+                if self._project and "project" not in meta:
+                    meta["project"] = str(self._project.data.get("project") or "")
+                self._render_report_pdf(report_path, meta)
+            except Exception:
+                # don't fail finish on report errors
+                report_path = None  # type: ignore
+
+            # ZIP for sending (includes the bundle folder)
             out_zip = out_dir / f"{base}.zip"
             with zipfile.ZipFile(out_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
-                z.write(out_pdf, arcname=out_pdf.name)
+                for fp in bundle_dir.rglob("*"):
+                    if fp.is_file():
+                        arc = str(fp.relative_to(out_dir))
+                        z.write(fp, arcname=arc)
             return {
                 "ok": True,
                 "dir": str(out_dir.resolve()),
                 "zip": str(out_zip.resolve()),
                 "pdf": str(out_pdf.resolve()),
                 "filled_pdf": str(latest if latest else out_pdf.resolve()),
+                "bundle_dir": str(bundle_dir.resolve()),
+                "report_pdf": str(report_path.resolve()) if report_path else None,
             }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def reveal_in_explorer(self, path: str) -> dict[str, Any]:
+        """
+        Open Windows Explorer at the given path.
+        - If path is a file: open folder and select it.
+        - If path is a folder: open it.
+        """
+        try:
+            p = Path(str(path or "").strip())
+            if not p:
+                return {"ok": False, "error": "missing_path"}
+            p = p.expanduser()
+            if not p.is_absolute():
+                # treat as relative to current project folder if possible
+                if self._project:
+                    p = (self._project.path.parent / p).resolve()
+                else:
+                    p = p.resolve()
+
+            # Prefer explorer /select for files
+            if p.exists() and p.is_file():
+                os.system(f'explorer /select,"{str(p)}"')
+                return {"ok": True}
+            # Folder open
+            target = p if p.exists() else p.parent
+            if target.exists():
+                os.startfile(str(target))  # type: ignore[attr-defined]
+                return {"ok": True}
+            return {"ok": False, "error": "not_found"}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
 
 def main() -> None:
     _ensure_dirs()
+    _configure_pythonnet_coreclr()
+    import webview  # local import so pythonnet env is configured first
+
     api = Api()
     ui_index = (UI_DIR / "index.html").resolve()
     if not ui_index.exists():
@@ -1262,6 +2195,9 @@ def main() -> None:
         y=40,
         resizable=True,
     )
+    # NOTE:
+    # Closing-event confirmation caused intermittent crashes on some environments.
+    # Keep shutdown path minimal/stable; saving is handled during normal operations.
     webview.start(debug=False)
 
 

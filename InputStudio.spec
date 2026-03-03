@@ -3,19 +3,46 @@
 from pathlib import Path
 
 # NOTE: PyInstaller executes .spec without defining __file__ in some contexts.
-# Use an absolute path to keep data inclusion stable regardless of working directory.
+# Keep this path aligned with the project that is actually being built.
 ROOT = Path(r"C:\Users\mokoh\document_generator_modern")
 
 a = Analysis(
     [str(ROOT / 'app.py')],
     pathex=[str(ROOT)],
     binaries=[],
-    datas=[(str(ROOT / 'ui'), 'ui')],
+    datas=[
+        (str(ROOT / 'ui'), 'ui'),
+        (str(ROOT / 'coreclr.runtimeconfig.json'), '.'),
+        (str(ROOT / 'assets' / 'fonts'), str(Path('assets') / 'fonts')),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        # Not used by InputStudio; excluding keeps build fast/small on dev machines
+        "torch",
+        "torchvision",
+        "torchaudio",
+        "tensorflow",
+        "jax",
+        "scipy",
+        "numpy.f2py",
+        "pandas",
+        "matplotlib",
+        "sympy",
+        "pytest",
+        "_pytest",
+        "networkx",
+        "sklearn",
+        "cv2",
+        "opencv",
+        "IPython",
+        "notebook",
+        "jupyter",
+        "PyQt5",
+        "PySide6",
+    ],
     noarchive=False,
     optimize=0,
 )
