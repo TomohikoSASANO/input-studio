@@ -1,155 +1,4 @@
 const $ = (sel) => document.querySelector(sel)
-const DEFAULT_LETTER_SPACING = 1.2
-const isWeb = () => !!(typeof window !== 'undefined' && window.__INPUTSTUDIO_WEB__)
-const tr = (key, fallback, vars = {}) => {
-  const fn = window.i18n?.t
-  if (typeof fn !== "function") return String(fallback || key)
-  const out = fn(key, vars)
-  if (out === key && fallback) return String(fallback)
-  return String(out)
-}
-const getLocaleSafe = () => {
-  const fn = window.i18n?.getLocale
-  if (typeof fn !== "function") return "ja"
-  return fn() || "ja"
-}
-const LOCALE_OPTIONS = [
-  { code: "ja", label: "日本語 / Japanese", flag: "jp" },
-  { code: "en", label: "English / 英語", flag: "us" },
-  { code: "zh", label: "中文 / Chinese", flag: "cn" },
-  { code: "hi", label: "हिन्दी / Hindi", flag: "in" },
-  { code: "es", label: "Español / Spanish", flag: "es" },
-  { code: "fr", label: "Français / French", flag: "fr" },
-  { code: "ar", label: "العربية / Arabic", flag: "sa" },
-  { code: "pt", label: "Português / Portuguese", flag: "br" },
-  { code: "ru", label: "Русский / Russian", flag: "ru" },
-  { code: "bn", label: "বাংলা / Bengali", flag: "bd" },
-  { code: "id", label: "Bahasa Indonesia / Indonesian", flag: "id" },
-  { code: "ur", label: "اردو / Urdu", flag: "pk" },
-  { code: "de", label: "Deutsch / German", flag: "de" },
-  { code: "it", label: "Italiano / Italian", flag: "it" },
-  { code: "tr", label: "Türkçe / Turkish", flag: "tr" },
-  { code: "vi", label: "Tiếng Việt / Vietnamese", flag: "vi" },
-  { code: "ko", label: "한국어 / Korean", flag: "kr" },
-  { code: "fa", label: "فارسی / Persian", flag: "ir" },
-  { code: "th", label: "ไทย / Thai", flag: "th" },
-  { code: "pl", label: "Polski / Polish", flag: "pl" },
-  { code: "uk", label: "Українська / Ukrainian", flag: "ua" },
-  { code: "nl", label: "Nederlands / Dutch", flag: "nl" },
-]
-const getLocaleMeta = (locale) => {
-  return LOCALE_OPTIONS.find((x) => x.code === String(locale || "").toLowerCase()) || LOCALE_OPTIONS[0]
-}
-const AD_UNLOCK_RULES = {
-  zip_open: { cooldownMs: 5 * 60 * 1000, maxPerSession: 2 },
-  pdf_append: { cooldownMs: 3 * 60 * 1000, maxPerSession: 3 },
-}
-const AD_SLOT_IDS = {
-  gate: "adSlotGate",
-  panel: "adSlotPanel",
-  panelBottom: "adSlotPanelBottom",
-}
-const adRuntime = {
-  scriptReady: false,
-  scriptPromise: null,
-}
-
-function getAdConfig() {
-  const raw = window.__INPUTSTUDIO_AD_CONFIG__ && typeof window.__INPUTSTUDIO_AD_CONFIG__ === "object"
-    ? window.__INPUTSTUDIO_AD_CONFIG__
-    : {}
-  const adsense = raw.adsense && typeof raw.adsense === "object" ? raw.adsense : {}
-  const slots = adsense.slots && typeof adsense.slots === "object" ? adsense.slots : {}
-  const unlock = raw.unlock && typeof raw.unlock === "object" ? raw.unlock : {}
-  return {
-    enabled: !!raw.enabled && isWeb(),
-    provider: String(raw.provider || "none").toLowerCase(),
-    adsense: {
-      client: String(adsense.client || "").trim(),
-      slots: {
-        gate: String(slots.gate || "").trim(),
-        panel: String(slots.panel || "").trim(),
-        panelBottom: String(slots.panelBottom || "").trim(),
-        unlock: String(slots.unlock || "").trim(),
-      },
-    },
-    unlock: {
-      minSeconds: Math.max(0, Number(unlock.minSeconds || 3) || 3),
-    },
-  }
-}
-
-function getAdSlotFor(name) {
-  const cfg = getAdConfig()
-  return String(cfg.adsense?.slots?.[name] || "").trim()
-}
-
-async function ensureAdSenseScript() {
-  const cfg = getAdConfig()
-  if (!cfg.enabled || cfg.provider !== "adsense") return false
-  if (!cfg.adsense.client) return false
-  if (adRuntime.scriptReady) return true
-  if (adRuntime.scriptPromise) return adRuntime.scriptPromise
-  adRuntime.scriptPromise = new Promise((resolve) => {
-    const src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${encodeURIComponent(cfg.adsense.client)}`
-    const exists = Array.from(document.querySelectorAll("script")).find((s) => String(s.src || "").includes("pagead/js/adsbygoogle.js"))
-    if (exists) {
-      adRuntime.scriptReady = true
-      resolve(true)
-      return
-    }
-    const s = document.createElement("script")
-    s.async = true
-    s.src = src
-    s.crossOrigin = "anonymous"
-    s.onload = () => {
-      adRuntime.scriptReady = true
-      resolve(true)
-    }
-    s.onerror = () => resolve(false)
-    document.head.appendChild(s)
-  })
-  return adRuntime.scriptPromise
-}
-
-function mountAdSenseInto(container, slotId) {
-  const cfg = getAdConfig()
-  if (!container || !slotId || !cfg.adsense.client) return false
-  const adId = `ad-${slotId}-${Date.now().toString(36)}`
-  container.innerHTML = `
-    <ins id="${escapeHtml(adId)}"
-      class="adsbygoogle inputstudioAd"
-      style="display:block"
-      data-ad-client="${escapeHtml(cfg.adsense.client)}"
-      data-ad-slot="${escapeHtml(slotId)}"
-      data-ad-format="auto"
-      data-full-width-responsive="true"></ins>
-  `
-  try {
-    ;(window.adsbygoogle = window.adsbygoogle || []).push({})
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function refreshAdSlots() {
-  const cfg = getAdConfig()
-  if (!cfg.enabled || cfg.provider !== "adsense") return
-  const ok = await ensureAdSenseScript()
-  if (!ok) return
-  for (const [slotName, domId] of Object.entries(AD_SLOT_IDS)) {
-    const host = document.getElementById(domId)
-    if (!host) continue
-    const slotId = getAdSlotFor(slotName)
-    if (!slotId) continue
-    const live = host.querySelector(".adSlot__live")
-    if (!live) continue
-    if (live.dataset.liveMounted === "1") continue
-    const mounted = mountAdSenseInto(live, slotId)
-    if (mounted) live.dataset.liveMounted = "1"
-  }
-}
 
 // --- Web demo mode (GitHub Pages) ------------------------------------------
 // GitHub上で「実画面レビュー」を回すため、pywebviewが無い環境では
@@ -177,8 +26,6 @@ async function refreshAdSlots() {
     tags: [],
     values: {},
     placements: {}, // fid -> {tag,page,x,y,font_size,...}
-    defaultFontSize: 14,
-    viewZoom: 1.0,
   }
 
   const makeSvgDataUrl = (pageIndex) => {
@@ -221,27 +68,7 @@ async function refreshAdSlots() {
 
   const api = {
     async get_admin_settings() {
-      return {
-        ok: true,
-        settings: {
-          ui_mode: demo.uiMode,
-          default_font_size: Number(demo.defaultFontSize || 14) || 14,
-          view_zoom: Number(demo.viewZoom || 1.0) || 1.0,
-        },
-      }
-    },
-    async update_admin_settings(patch) {
-      const p = patch && typeof patch === "object" ? patch : {}
-      if (p.default_font_size != null) demo.defaultFontSize = Number(p.default_font_size || 14) || 14
-      if (p.view_zoom != null) demo.viewZoom = Number(p.view_zoom || 1.0) || 1.0
-      return {
-        ok: true,
-        settings: {
-          ui_mode: demo.uiMode,
-          default_font_size: Number(demo.defaultFontSize || 14) || 14,
-          view_zoom: Number(demo.viewZoom || 1.0) || 1.0,
-        },
-      }
+      return { ok: true, settings: { ui_mode: demo.uiMode, default_font_size: 14, view_zoom: 1.0 } }
     },
     async get_workers() {
       return {
@@ -280,6 +107,10 @@ async function refreshAdSlots() {
     async save_current_project() {
       return { ok: true }
     },
+    async update_admin_settings(patch) {
+      // demo no-op
+      return { ok: true, settings: { ui_mode: demo.uiMode, ...(patch || {}) } }
+    },
     async save_project_as(name) {
       demo.projectName = String(name || demo.projectName || "案件")
       demo.projectPath = "demo/project.json"
@@ -288,69 +119,6 @@ async function refreshAdSlots() {
     async append_pdf_to_project() {
       demo.pageCount = Math.max(1, Number(demo.pageCount || 1) + 1)
       return { ok: true, page_count: demo.pageCount }
-    },
-    async copy_page_with_elements(page_index) {
-      const idx = Math.max(0, Math.min(Math.max(1, Number(demo.pageCount || 1)) - 1, Number(page_index || 0)))
-      const out = {}
-      for (const [fid, pl] of Object.entries(demo.placements || {})) {
-        if (!pl || typeof pl !== "object") continue
-        const page = Number(pl.page || 0)
-        const next = { ...pl }
-        if (page > idx) next.page = page + 1
-        out[fid] = next
-        if (page === idx) {
-          const nf = `f_${Date.now().toString(16)}_${Math.random().toString(16).slice(2, 8)}`
-          out[nf] = { ...pl, page: idx + 1 }
-        }
-      }
-      demo.placements = out
-      demo.pageCount = Math.max(1, Number(demo.pageCount || 1) + 1)
-      return { ok: true, page_count: demo.pageCount, page_index: idx + 1, placements: demo.placements }
-    },
-    async delete_page_from_project(page_index) {
-      const total = Math.max(1, Number(demo.pageCount || 1))
-      if (total <= 1) return { ok: false, error: "cannot_delete_last_page" }
-      const idx = Math.max(0, Math.min(total - 1, Number(page_index || 0)))
-      const out = {}
-      for (const [fid, pl] of Object.entries(demo.placements || {})) {
-        if (!pl || typeof pl !== "object") continue
-        const page = Number(pl.page || 0)
-        if (page === idx) continue
-        out[fid] = { ...pl, page: page > idx ? page - 1 : page }
-      }
-      demo.placements = out
-      demo.pageCount = Math.max(1, total - 1)
-      return {
-        ok: true,
-        page_count: demo.pageCount,
-        page_index: Math.max(0, Math.min(demo.pageCount - 1, idx)),
-        tags: demo.tags,
-        values: demo.values,
-        placements: demo.placements,
-      }
-    },
-    async reorder_pages(order) {
-      const total = Math.max(1, Number(demo.pageCount || 1))
-      if (!Array.isArray(order) || order.length !== total) return { ok: false, error: "invalid_order" }
-      const norm = order.map((x) => Number(x))
-      if (norm.some((x) => !Number.isFinite(x))) return { ok: false, error: "invalid_order" }
-      const set = new Set(norm)
-      if (set.size !== total) return { ok: false, error: "invalid_order" }
-      const min = Math.min(...norm)
-      const max = Math.max(...norm)
-      if (min < 0 || max >= total) return { ok: false, error: "invalid_order" }
-      const oldToNew = {}
-      norm.forEach((oldIdx, newIdx) => {
-        oldToNew[Number(oldIdx)] = Number(newIdx)
-      })
-      const out = {}
-      for (const [fid, pl] of Object.entries(demo.placements || {})) {
-        if (!pl || typeof pl !== "object") continue
-        const oldPage = Number(pl.page || 0)
-        out[fid] = { ...pl, page: Number(oldToNew[oldPage] ?? oldPage) }
-      }
-      demo.placements = out
-      return { ok: true, page_count: demo.pageCount, placements: demo.placements }
     },
     async set_ui_mode(mode) {
       demo.uiMode = String(mode || "worker")
@@ -385,7 +153,7 @@ async function refreshAdSlots() {
         font_size: Number(font_size || 14),
         color: "#0f172a",
         line_height: 1.2,
-        letter_spacing: DEFAULT_LETTER_SPACING,
+        letter_spacing: 0,
       }
       return { ok: true, fid, tag: t }
     },
@@ -479,6 +247,9 @@ const state = {
   projectName: null,
   workers: [],
   workerId: null,
+  isDirty: false,
+  defaultFontSize: 14,
+  viewZoom: 1.0,
   appStage: "gate", // "gate" | "main"
   gate: {
     step: "choose", // "choose" | "worker" | "admin"
@@ -521,20 +292,27 @@ const state = {
   lastFilledPdf: null,
   lastReportPdf: null,
   lastExportDir: null,
-  defaultFontSize: 14,
-  viewZoom: 1.0,
-  viewPanX: 0,
-  viewPanY: 0,
-  locale: getLocaleSafe(),
-  adLastShown: {},
-  adSessionCounts: {},
+}
+
+function markDirty() {
+  state.isDirty = true
+}
+
+function markClean() {
+  state.isDirty = false
+}
+
+// Expose minimal hooks for native "confirm close" in desktop app
+window.__inputstudio_isDirty = () => !!state.isDirty
+window.__inputstudio_markClean = () => {
+  markClean()
+  return true
 }
 
 state.history = loadLocal("inputstudio-history", [])
 state.lastSession = loadLocal("inputstudio-last-session", null)
 state.lastProjectDir = loadLocal("inputstudio-last-dir", null)
 state.showPanel = loadLocal("inputstudio-show-panel", true)
-state.adLastShown = loadLocal("inputstudio-ad-last-shown", {})
 
 function loadLocal(key, fallback) {
   try {
@@ -574,33 +352,6 @@ function getRenderedContentRect(imgEl, pageW, pageH) {
   }
 }
 
-function clampNum(v, minV, maxV) {
-  const n = Number(v)
-  if (!Number.isFinite(n)) return minV
-  return Math.max(minV, Math.min(maxV, n))
-}
-
-function applyPreviewTransform() {
-  const sc = $("#previewScale")
-  if (!sc) return
-  const z = clampNum(state.viewZoom || 1, 0.5, 3.0)
-  const tx = Number(state.viewPanX || 0) || 0
-  const ty = Number(state.viewPanY || 0) || 0
-  sc.style.transform = `translate(${tx}px, ${ty}px) scale(${z})`
-  const zi = $("#zoomIndicator")
-  if (zi) zi.textContent = `${Math.round(z * 100)}%`
-}
-
-async function setViewZoom(nextZoom, { persist = true } = {}) {
-  state.viewZoom = clampNum(nextZoom, 0.5, 3.0)
-  applyPreviewTransform()
-  drawOverlay()
-  if (!persist) return
-  try {
-    await window.pywebview?.api?.update_admin_settings?.({ view_zoom: state.viewZoom })
-  } catch {}
-}
-
 function deepClone(obj) {
   return JSON.parse(JSON.stringify(obj))
 }
@@ -623,6 +374,7 @@ async function applyProjectSnapshot(snap, { save = true } = {}) {
     await window.pywebview.api.set_project_payload({ tags: state.tags, values: state.values, placements: state.placements })
     await window.pywebview.api.save_current_project?.(false)
   }
+  markDirty()
   render()
 }
 
@@ -661,7 +413,7 @@ function isWideChar(ch) {
 function placementBoxOnPage(fid, pl) {
   const fs = Number(pl?.font_size || 14) || 14
   const lh = Number(pl?.line_height || 1.2) || 1.2
-  const ls = Number(pl?.letter_spacing ?? DEFAULT_LETTER_SPACING) || DEFAULT_LETTER_SPACING
+  const ls = Number(pl?.letter_spacing || 0) || 0
   const writingMode = String(pl?.writing_mode || "horizontal")
   const tag = String(pl?.tag || "").trim()
   const v = String((state.values?.[tag] || "")).replaceAll("<br>", "\n")
@@ -708,165 +460,6 @@ function toast(msg) {
   el.style.display = "block"
   clearTimeout(el._t)
   el._t = setTimeout(() => (el.style.display = "none"), 2100)
-}
-
-function ensureSysDialogRoot() {
-  let root = document.getElementById("sysDialogRoot")
-  if (!root) {
-    root = document.createElement("div")
-    root.id = "sysDialogRoot"
-    root.className = "sysDialog"
-    root.style.display = "none"
-    document.body.appendChild(root)
-  }
-  return root
-}
-
-async function openSysDialog({ title, message, type = "alert", defaultValue = "" }) {
-  const root = ensureSysDialogRoot()
-  return await new Promise((resolve) => {
-    const close = (value) => {
-      root.style.display = "none"
-      root.innerHTML = ""
-      resolve(value)
-    }
-    root.style.display = "block"
-    root.innerHTML = `
-      <div class="sysDialog__backdrop" id="sysDialogBackdrop"></div>
-      <div class="sysDialog__card">
-        <div class="sysDialog__title">${escapeHtml(String(title || tr("dialog.title", "確認")))}</div>
-        <div class="sysDialog__body">${escapeHtml(String(message || ""))}</div>
-        ${type === "prompt" ? `<input class="input" id="sysDialogInput" value="${escapeHtml(String(defaultValue || ""))}" />` : ""}
-        <div class="row" style="justify-content:flex-end; margin-top:12px">
-          ${type !== "alert" ? `<button class="btn btn--soft" id="sysDialogCancel">${escapeHtml(tr("dialog.cancel", "キャンセル"))}</button>` : ""}
-          <button class="btn btn--primary" id="sysDialogOk">${escapeHtml(type === "alert" ? tr("dialog.ok", "OK") : tr("dialog.continue", "続行"))}</button>
-        </div>
-      </div>
-    `
-    const input = document.getElementById("sysDialogInput")
-    if (input) {
-      input.focus()
-      try {
-        const len = String(input.value || "").length
-        input.setSelectionRange(len, len)
-      } catch {}
-      input.addEventListener("keydown", (ev) => {
-        if (ev.key === "Enter") {
-          ev.preventDefault()
-          close(String(input.value || ""))
-        }
-      })
-    }
-    const ok = document.getElementById("sysDialogOk")
-    if (ok) ok.onclick = () => close(type === "prompt" ? String(input?.value || "") : true)
-    const cancel = document.getElementById("sysDialogCancel")
-    if (cancel) cancel.onclick = () => close(type === "prompt" ? null : false)
-    const backdrop = document.getElementById("sysDialogBackdrop")
-    if (backdrop) backdrop.onclick = () => close(type === "prompt" ? null : false)
-  })
-}
-
-const uiAlert = async (msg, title = null) => openSysDialog({ title, message: msg, type: "alert" })
-const uiConfirm = async (msg, title = null) => openSysDialog({ title, message: msg, type: "confirm" })
-const uiPrompt = async (msg, defaultValue = "", title = null) => openSysDialog({ title, message: msg, type: "prompt", defaultValue })
-
-function apiErrorMessage(result, fallback = "エラーが発生しました") {
-  const code = String(result?.code || "").toUpperCase()
-  const map = {
-    RATE_LIMITED: tr("error.rateLimited", "アクセスが集中しています。少し待って再試行してください。"),
-    UPLOAD_TOO_LARGE: tr("error.uploadTooLarge", "アップロードファイルが大きすぎます。サイズを下げて再試行してください。"),
-    SERVER_BUSY: tr("error.serverBusy", "サーバーが混み合っています。少し待って再試行してください。"),
-    INVALID_ORDER: tr("error.invalidOrder", "並び順データが不正です。並べ替えをやり直してください。"),
-    METHOD_NOT_ALLOWED: tr("error.methodNotAllowed", "サーバー接続エラーです。サーバー再起動後に再試行してください。"),
-  }
-  if (code && map[code]) return map[code]
-  return String(result?.error || fallback)
-}
-
-function shouldShowUnlockAd(action) {
-  if (!isWeb()) return false
-  const rule = AD_UNLOCK_RULES[action]
-  if (!rule) return false
-  const now = Date.now()
-  const last = Number(state.adLastShown?.[action] || 0)
-  const count = Number(state.adSessionCounts?.[action] || 0)
-  if (count >= Number(rule.maxPerSession || 0)) return false
-  return now - last >= Number(rule.cooldownMs || 0)
-}
-
-function recordUnlockAdShown(action) {
-  const now = Date.now()
-  state.adLastShown = state.adLastShown || {}
-  state.adSessionCounts = state.adSessionCounts || {}
-  state.adLastShown[action] = now
-  state.adSessionCounts[action] = Number(state.adSessionCounts[action] || 0) + 1
-  saveLocal("inputstudio-ad-last-shown", state.adLastShown)
-}
-
-async function showUnlockAd(action) {
-  if (!shouldShowUnlockAd(action)) return true
-  const modal = $("#modal")
-  if (!modal) return true
-  const cfg = getAdConfig()
-  const unlockSlotId = getAdSlotFor("unlock") || getAdSlotFor("gate")
-  const showLiveUnlockAd = cfg.enabled && cfg.provider === "adsense" && !!unlockSlotId
-  return await new Promise((resolve) => {
-    let sec = Math.max(1, Number(cfg.unlock?.minSeconds || 3) || 3)
-    const close = (ok) => {
-      modal.style.display = "none"
-      modal.innerHTML = ""
-      resolve(!!ok)
-    }
-    modal.style.display = "block"
-    modal.innerHTML = `
-      <div class="modal__backdrop" id="adUnlockClose"></div>
-      <div class="modal__card" style="max-width:420px; width:min(92vw,420px)">
-        <div class="modal__title">${escapeHtml(tr("ad.unlock.title", "広告を表示して続行"))}</div>
-        <div class="label" style="line-height:1.7">${escapeHtml(tr("ad.unlock.desc", "無料提供を継続するため、短い広告表示後にこの操作を実行できます。"))}</div>
-        ${showLiveUnlockAd ? `<div class="adUnlockLive" id="adUnlockLive"></div>` : `<div class="adUnlockMock">AD</div>`}
-        <div class="label" id="adUnlockTimer">${escapeHtml(tr("ad.unlock.wait", `${sec}秒後に続行できます`, { sec }))}</div>
-        <div class="row" style="justify-content:flex-end; margin-top:12px">
-          <button class="btn btn--soft" id="adUnlockCancel">${escapeHtml(tr("ad.unlock.cancel", "キャンセル"))}</button>
-          <button class="btn btn--primary" id="adUnlockGo" disabled>${escapeHtml(tr("ad.unlock.continue", "広告を見て続行"))}</button>
-        </div>
-      </div>
-    `
-    if (showLiveUnlockAd) {
-      ensureAdSenseScript().then((ok) => {
-        if (!ok) return
-        const live = document.getElementById("adUnlockLive")
-        if (!live) return
-        mountAdSenseInto(live, unlockSlotId)
-      })
-    }
-    const btnGo = $("#adUnlockGo")
-    const timerEl = $("#adUnlockTimer")
-    const timer = setInterval(() => {
-      sec -= 1
-      if (sec <= 0) {
-        clearInterval(timer)
-        if (btnGo) btnGo.disabled = false
-        if (timerEl) timerEl.textContent = tr("ad.unlock.ready", "続行できます")
-        return
-      }
-      if (timerEl) timerEl.textContent = tr("ad.unlock.wait", `${sec}秒後に続行できます`, { sec })
-    }, 1000)
-    $("#adUnlockClose").onclick = () => {
-      clearInterval(timer)
-      close(false)
-    }
-    $("#adUnlockCancel").onclick = () => {
-      clearInterval(timer)
-      close(false)
-    }
-    if (btnGo) {
-      btnGo.onclick = () => {
-        clearInterval(timer)
-        recordUnlockAdShown(action)
-        close(true)
-      }
-    }
-  })
 }
 
 function fmtTime(sec) {
@@ -1054,12 +647,11 @@ async function updateTagValue(tag, rawText) {
 // タグ操作は「パレット上のタグ一覧」に一本化する。
 
 function renderGate() {
+  const step = state.gate?.step || "choose"
   const err = String(state.gate?.error || "")
-  const localeOptionsHtml = LOCALE_OPTIONS.map((opt) => {
-    const sel = state.locale === opt.code ? "selected" : ""
-    return `<option value="${escapeHtml(opt.code)}" ${sel}>${escapeHtml(opt.label)}</option>`
-  }).join("")
-  const localeFlag = getLocaleMeta(state.locale).flag
+  const workerOptions = (state.workers || [])
+    .map((w) => `<option value="${escapeHtml(w.id)}" ${w.id === state.workerId ? "selected" : ""}>${escapeHtml(w.name)}</option>`)
+    .join("")
 
   $("#app").innerHTML = `
     <div class="bgBlobs" aria-hidden="true">
@@ -1073,221 +665,132 @@ function renderGate() {
           <div class="logo gateLogo" aria-hidden="true"></div>
           <div class="gateTitle">
             <div class="gateTitle__top">Input Studio</div>
-            <div class="gateTitle__sub">${escapeHtml(tr("brand.tagline", "PDFに文字を置いて、完成PDFを作る"))}</div>
+            <div class="gateTitle__sub">PDFに文字を置いて、完成PDFを作る</div>
           </div>
         </div>
-        <div class="row gateLocaleRow" style="justify-content:flex-end; margin-top:8px">
-          <label class="label gateLocaleLabel" for="gateLocale">${escapeHtml(tr("top.languageMixed", "言語 Language"))}</label>
-          <span id="gateLocaleFlag" class="flagIcon flagIcon--${escapeHtml(localeFlag)}" aria-hidden="true"></span>
-          <select id="gateLocale" class="input" style="width:220px; padding:8px 10px">
-            ${localeOptionsHtml}
-          </select>
-        </div>
 
-        <div class="gateActions">
-          <button class="btn btn--primary" id="gateLoadPdf">${escapeHtml(tr("gate.loadPdf", "PDFを読み込む"))}</button>
-          <button class="btn btn--soft" id="gateLoadProject">${escapeHtml(tr("gate.loadZip", "プロジェクトZIPを開く"))}</button>
-        </div>
-        <div class="label gateHint">${escapeHtml(tr("gate.hint", "PDFから新規作成　／　既存の案件（ZIP・PDF同梱）を開く"))}</div>
-        <div class="gateGuide">
-          <div class="gateGuide__title">${escapeHtml(tr("top.value.title", "このサイトでできること"))}</div>
-          <div class="gateGuide__item">${escapeHtml(tr("top.value.audience", "対象: 申請書・帳票の入力担当者"))}</div>
-          <div class="gateGuide__item">${escapeHtml(tr("top.value.benefit1", "価値1: タグ同期で同じ項目を一括更新"))}</div>
-          <div class="gateGuide__item">${escapeHtml(tr("top.value.benefit2", "価値2: ZIPで案件を持ち運びしやすい"))}</div>
-          <div class="gateGuide__item">${escapeHtml(tr("top.value.benefit3", "価値3: 入力からPDF出力までブラウザで完結"))}</div>
-          <div class="gateGuide__title" style="margin-top:6px">${escapeHtml(tr("top.howto.title", "使い方（3ステップ）"))}</div>
-          <div class="gateGuide__item">${escapeHtml(tr("top.howto.step1", "1. プロジェクトZIPを開く（またはPDFから新規作成）"))}</div>
-          <div class="gateGuide__item">${escapeHtml(tr("top.howto.step2", "2. 項目を入力して必要に応じてページ操作"))}</div>
-          <div class="gateGuide__item">${escapeHtml(tr("top.howto.step3", "3. PDFダウンロード / プロジェクト保存"))}</div>
-        </div>
-        <div class="adSlot adSlot--gate" id="adSlotGate">
-          <div class="adSlot__label">${escapeHtml(tr("ad.label", "広告"))}</div>
-          <div class="adSlot__title">${escapeHtml(tr("ad.sponsorTitle", "スポンサーからのお知らせ"))}</div>
-          <div class="adSlot__body">${escapeHtml(tr("ad.sponsorBody", "ここにバナー広告が表示されます（実装準備中）"))}</div>
-          <div class="adSlot__live" aria-label="ad slot gate"></div>
-        </div>
-        ${err ? `<div class="gateError">${escapeHtml(err)}</div>` : ""}
-        ${window.__INPUTSTUDIO_DEMO__ ? `<input type="file" id="gateDemoPdf" accept=".pdf,application/pdf" style="display:none" />` : ""}
+        ${
+          step === "choose"
+            ? `<div class="gateActions">
+                <button class="btn btn--primary" id="gateWorker">入力者</button>
+                <button class="btn btn--soft" id="gateAdmin">管理者</button>
+              </div>
+              <div class="label gateHint">入力者：作業者を選んで開始　／　管理者：パスワードで機能を開放</div>`
+            : ""
+        }
+
+        ${
+          step === "worker"
+            ? `<div class="gateSection">
+                <div class="row spread" style="margin-bottom:8px">
+                  <div class="badge">入力者</div>
+                  <button class="btn btn--ghost" id="gateBack">戻る</button>
+                </div>
+                <div class="field">
+                  <div class="label">作業者を選択</div>
+                  <select id="gateWorkerPick">${workerOptions}</select>
+                </div>
+                <div class="row" style="margin-top:10px">
+                  <button class="btn btn--soft" id="gateWorkerNew">新規登録</button>
+                  <button class="btn btn--primary" id="gateWorkerGo">この作業者で開始</button>
+                </div>
+                ${err ? `<div class="gateError">${escapeHtml(err)}</div>` : ""}
+              </div>`
+            : ""
+        }
+
+        ${
+          step === "admin"
+            ? `<div class="gateSection">
+                <div class="row spread" style="margin-bottom:8px">
+                  <div class="badge">管理者</div>
+                  <button class="btn btn--ghost" id="gateBack">戻る</button>
+                </div>
+                <div class="field">
+                  <div class="label">パスワード</div>
+                  <input class="input" id="gatePass" type="password" placeholder="パスワードを入力" value="${escapeHtml(state.gate?.password || "")}">
+                </div>
+                <div class="row" style="margin-top:10px">
+                  <button class="btn btn--primary" id="gateAdminGo">管理者として開始</button>
+                </div>
+                ${err ? `<div class="gateError">${escapeHtml(err)}</div>` : ""}
+              </div>`
+            : ""
+        }
       </div>
     </div>
     <div class="toast" id="toast"></div>
     <div class="modal" id="modal" style="display:none"></div>
   `
-  refreshAdSlots()
 
-  // bindings: PDFを読み込む
-  const gateLocale = $("#gateLocale")
-  if (gateLocale) {
-    gateLocale.onchange = () => {
-      const next = String(gateLocale.value || "ja")
-      state.locale = window.i18n?.setLocale?.(next) || next
-      renderGate()
+  // bindings
+  const setStep = (s) => {
+    state.gate.step = s
+    state.gate.error = ""
+    render()
+  }
+  const back = $("#gateBack")
+  if (back) back.onclick = () => setStep("choose")
+
+  const bWorker = $("#gateWorker")
+  if (bWorker) bWorker.onclick = () => setStep("worker")
+  const bAdmin = $("#gateAdmin")
+  if (bAdmin) bAdmin.onclick = () => setStep("admin")
+
+  const workerPick = $("#gateWorkerPick")
+  if (workerPick) workerPick.onchange = (e) => {
+    state.workerId = e.target.value
+    saveLocal("inputstudio-last-worker", state.workerId)
+  }
+  const workerNew = $("#gateWorkerNew")
+  if (workerNew) workerNew.onclick = () => openWorkerModal({ mode: "create" })
+  const workerGo = $("#gateWorkerGo")
+  if (workerGo) workerGo.onclick = async () => {
+    try {
+      if (!state.workerId) {
+        state.gate.error = "作業者を選んでください"
+        return render()
+      }
+      // Ensure worker mode
+      try {
+        await window.pywebview.api.set_ui_mode?.("worker")
+      } catch {}
+      state.uiMode = "worker"
+      state.appStage = "main"
+      saveLocal("inputstudio-last-role", "worker")
+      render()
+    } catch (e) {
+      state.gate.error = `開始できませんでした: ${e}`
+      render()
     }
   }
 
-  const bLoadPdf = $("#gateLoadPdf")
-  if (bLoadPdf) bLoadPdf.onclick = async () => {
-    if (window.__INPUTSTUDIO_DEMO__) {
-      const inp = $("#gateDemoPdf")
-      if (inp) inp.click()
+  const pass = $("#gatePass")
+  if (pass) {
+    pass.focus()
+    pass.oninput = (e) => {
+      state.gate.password = e.target.value
+      state.gate.error = ""
+    }
+    pass.onkeydown = (e) => {
+      if (e.key === "Enter") $("#gateAdminGo")?.click?.()
+    }
+  }
+  const adminGo = $("#gateAdminGo")
+  if (adminGo) adminGo.onclick = async () => {
+    const p = String(state.gate.password || "")
+    if (p !== "takafumi0812") {
+      state.gate.error = "パスワードが違います"
+      render()
       return
     }
     try {
-      const api = window.pywebview?.api
-      const pick = api?.pick_pdf
-      const createSimple = api?.create_project_from_pdf_simple
-      if (!pick || !createSimple) {
-        await uiAlert("PDFから新規作成する機能が見つかりません。最新版のアプリをご利用ください。")
-        return
-      }
-      const r = await pick()
-      if (!r?.ok) return
-      toast(tr("gate.toastCreateProjectFromPdf", "PDFを読み込み、新規プロジェクトを作成します…"))
-      const g = await createSimple(r.path)
-      if (!g?.ok || !g.path) {
-        await uiAlert((g?.errors || ["PDFをプロジェクト化できませんでした"]).join("\n"))
-        return
-      }
-      const loaded = await api.load_project(g.path)
-      if (!loaded?.ok) {
-        await uiAlert("新規プロジェクトを開けませんでした")
-        return
-      }
-      state.projectPath = g.path
-      state.projectName = loaded.project
-      state.tags = loaded.tags || []
-      state.values = loaded.values || {}
-      state.placements = loaded.placements || {}
-      state.pageCount = loaded.page_count || 1
-      state.idx = 0
-      state.dropDir = loaded.drop_dir || ""
-      state.uiMode = loaded.ui_mode || state.uiMode
-      state.lastSession = { path: g.path, workerId: state.workerId, projectName: state.projectName }
-      saveLocal("inputstudio-last-session", state.lastSession)
-      try {
-        const dir = g.path.replace(/[/\\][^/\\]+$/, "")
-        state.lastProjectDir = dir
-        saveLocal("inputstudio-last-dir", dir)
-      } catch {}
-      state.working = false
-      state.inPrivate = false
-      state.timerStart = null
-      state.privateTotal = 0
-      state.appStage = "main"
-      const started = await autoStartWorkIfPossible()
-      toast(started ? "新規案件を作成し、作業タイマーを開始しました" : "PDFから新規プロジェクトを作成しました。必要に応じてタグを配置してください。")
-      render()
-      await queuePreview()
-    } catch (e) {
-      await uiAlert(`PDFから新規作成に失敗しました: ${e}`)
-    }
-  }
-
-  // bindings: ZIPを読み込む（プロジェクト＝ZIP前提）
-  const bLoadProject = $("#gateLoadProject")
-  if (bLoadProject) bLoadProject.onclick = async () => {
-    try {
-      const okToProceed = await showUnlockAd("zip_open")
-      if (!okToProceed) return
-      const r = await window.pywebview.api.pick_project(
-        window.__INPUTSTUDIO_WEB__ ? { zipOnly: true } : undefined
-      )
-      if (!r.ok) {
-        if (r.error) toast(apiErrorMessage(r, r.error))
-        return
-      }
-      toast(tr("gate.toastLoadingZip", "ZIPを読み込み中…"))
-      try {
-        const dir = r.path?.replace(/[/\\][^/\\]+$/, "")
-        if (dir) {
-          state.lastProjectDir = dir
-          saveLocal("inputstudio-last-dir", dir)
-        }
-      } catch {}
-      const loaded = await window.pywebview.api.load_project(r.path)
-      if (!loaded.ok) return
-      state.projectPath = r.path
-      state.projectName = loaded.project
-      state.tags = loaded.tags || []
-      state.values = loaded.values || {}
-      state.placements = loaded.placements || {}
-      state.pageCount = loaded.page_count || 1
-      state.idx = 0
-      state.dropDir = loaded.drop_dir || ""
-      state.uiMode = loaded.ui_mode || state.uiMode
-      state.lastSession = { path: r.path, workerId: state.workerId, projectName: state.projectName }
-      saveLocal("inputstudio-last-session", state.lastSession)
-      state.working = false
-      state.inPrivate = false
-      state.timerStart = null
-      state.privateTotal = 0
-      state.appStage = "main"
-      const started = await autoStartWorkIfPossible()
-      toast(started ? tr("gate.toastLoadedZipAndTimer", "ZIPを読み込み、作業タイマーを開始しました") : tr("gate.toastLoadedZip", "ZIPを読み込みました"))
-      render()
-      await queuePreview()
-    } catch (e) {
-      await uiAlert(`プロジェクトの読み込みに失敗しました: ${e}`)
-    }
-  }
-
-  // Demo: ファイル選択後に読み込み
-  const gateDemoPdf = $("#gateDemoPdf")
-  if (gateDemoPdf) {
-    gateDemoPdf.onchange = async () => {
-      const file = gateDemoPdf.files?.[0]
-      if (!file) return
-      try {
-        toast("PDFを読み込み中…")
-        const buf = await file.arrayBuffer()
-        const pdfjs = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/build/pdf.mjs")
-        pdfjs.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/build/pdf.worker.mjs"
-        const doc = await pdfjs.getDocument({ data: buf }).promise
-        window.__demoPdfDoc = doc
-        window.__demoPdfCache = new Map()
-        const api = window.pywebview?.api
-        if (api) {
-          api.get_preview_png_base64_page = async (page_index) => {
-            const idx = Math.max(0, Math.min(doc.numPages - 1, Number(page_index || 0)))
-            const cache = window.__demoPdfCache
-            if (cache.has(idx)) return cache.get(idx)
-            const page = await doc.getPage(idx + 1)
-            const scale = 150 / 72
-            const vp = page.getViewport({ scale })
-            const canvas = document.createElement("canvas")
-            canvas.width = Math.floor(vp.width)
-            canvas.height = Math.floor(vp.height)
-            const ctx = canvas.getContext("2d")
-            await page.render({ canvasContext: ctx, viewport: vp }).promise
-            const blob = await new Promise((res) => canvas.toBlob(res, "image/png"))
-            const url = URL.createObjectURL(blob)
-            const out = { ok: true, png: url, page_display_width: canvas.width, page_display_height: canvas.height, page_index: idx }
-            cache.set(idx, out)
-            return out
-          }
-          api.get_preview_png_base64 = async (tag) => {
-            const t = String(tag || "").trim()
-            const pl = state.placements?.[t]
-            const idx = pl ? Number(pl.page || 0) : 0
-            return api.get_preview_png_base64_page(idx)
-          }
-        }
-        state.projectPath = "demo:pdf"
-        state.projectName = file.name
-        state.pageCount = doc.numPages
-        state.previewPageIndex = 0
-        state.tags = []
-        state.values = {}
-        state.placements = {}
-        state.appStage = "main"
-        toast(`PDFを読み込みました（${doc.numPages}ページ）`)
-        render()
-      } catch (e) {
-        await uiAlert(`PDF読み込みに失敗しました: ${e}`)
-      } finally {
-        gateDemoPdf.value = ""
-      }
-    }
+      await window.pywebview.api.set_ui_mode?.("admin")
+    } catch {}
+    state.uiMode = "admin"
+    state.appStage = "main"
+    saveLocal("inputstudio-last-role", "admin")
+    render()
   }
 }
 
@@ -1309,101 +812,169 @@ function render() {
   // 画面常設のタグ一覧は表示しない（パレットに統一）
   const showTagPane = false
 
+  const modeChip = isAdmin
+    ? `<button class="chip" id="btnLock">入力者モードにする</button>`
+    : `<button class="chip" id="btnAdmin">管理者</button>`
+
   const left = `
     <div class="top">
-      <div class="brand row spread" style="align-items:center">
-        <div class="row" style="align-items:center; gap:12px">
-          <div class="logo" aria-hidden="true"></div>
+      <div class="brand">
+        <div class="logo" aria-hidden="true"></div>
+        <div>
           <div class="brand__name">Input Studio</div>
         </div>
-        <button class="chip chip--soft" id="btnBackToGate">${escapeHtml(tr("main.backToTop", "トップページに戻る"))}</button>
       </div>
-      ${window.__INPUTSTUDIO_DEMO__ ? `<input type="file" id="demoPdfFile" accept=".pdf,application/pdf" style="display:none" />` : ""}
+
+      <div class="guide">
+        ${
+          isAdmin
+            ? `<div class="guide__row">
+                <span class="guide__step">1</span>
+                <div style="flex:1">管理者：PDFを選んで新規プロジェクトを作成（フォーム検出なし。自分で欄を配置）</div>
+                <button class="chip chip--soft" id="btnOpenPdf">PDFから新規</button>
+                ${window.__INPUTSTUDIO_DEMO__ ? `<input type="file" id="demoPdfFile" accept=".pdf,application/pdf" style="display:none" />` : ""}
+              </div>`
+            : ""
+        }
+        <div class="guide__row">
+          <span class="guide__step">${isAdmin ? "2" : "1"}</span>
+          <div style="flex:1">${
+            isAdmin
+              ? "続きから：既存の案件（プロジェクト）を開いて編集/入力を再開"
+              : "入力者：管理者が用意した案件（プロジェクト）を開いて入力を開始"
+          }</div>
+          <button class="chip" id="btnOpen">案件を開く ${tipIcon(1, "PDF付きの案件ファイル（project.json）を選択して開始します。")} </button>
+          ${state.lastSession ? `<button class="chip chip--soft" id="btnResume">続きから</button>` : ""}
+        </div>
+        ${
+          state.lastProjectDir
+            ? `<div class="pathLine" title="${escapeHtml(state.lastProjectDir)}">
+                前回開いたフォルダ: <span class="pathValue">${escapeHtml(state.lastProjectDir)}</span>
+              </div>`
+            : ""
+        }
+      </div>
 
       <div class="miniActions">
-        <button class="chip chip--soft" id="btnOpen">${escapeHtml(tr("main.openZip", "プロジェクトZIPを開く"))}</button>
-        ${isAdmin ? `<button class="chip chip--soft" id="btnOpenPdf">${escapeHtml(tr("main.newFromPdf", "PDFから新規"))}</button>` : ""}
-        ${isAdmin ? `        <button class="chip" id="btnDesign">設計（統括）</button>` : ""}
-        <button class="chip chip--soft" id="btnAppendPdf" ${state.projectPath ? "" : "disabled"}>${escapeHtml(tr("main.appendPdf", "PDF追加"))}</button>
-        <button class="chip chip--soft" id="btnReorderPdf" ${state.projectPath ? "" : "disabled"}>${escapeHtml(tr("main.reorderPdf", "PDF並べ替え"))}</button>
-        <button class="chip chip--soft" id="btnCopyPageOp" ${state.projectPath ? "" : "disabled"}>${escapeHtml(tr("main.copyCurrentPage", "現在ページ複製"))}</button>
-        <button class="chip chip--soft" id="btnDeletePageOp" ${state.projectPath ? "" : "disabled"}>${escapeHtml(tr("main.deleteCurrentPage", "現在ページ削除"))}</button>
-        ${state.projectPath && !isWeb() ? `<button class="chip chip--soft" id="btnOpenSaved">保存先</button>` : ""}
+        ${isAdmin ? `<button class="chip" id="btnDesign">設計（統括）</button>` : ""}
+        <button class="chip" id="btnSave" ${state.projectPath ? "" : "disabled"}>上書き保存</button>
+        <button class="chip chip--soft" id="btnSaveAs" ${state.projectPath ? "" : "disabled"}>名前を付けて保存</button>
+        <button class="chip chip--soft" id="btnAddPdf" ${state.projectPath ? "" : "disabled"}>PDF追加</button>
+        ${state.projectPath ? `<button class="chip chip--soft" id="btnOpenSaved">保存先</button>` : ""}
+        ${state.lastFilledPdf ? `<button class="chip chip--soft" id="btnOpenFilled">提出PDF</button>` : ""}
+        ${!isAdmin ? `<button class="chip chip--soft" id="btnMyHistory">自分の履歴</button>` : ""}
+        ${modeChip}
         ${isAdmin ? `<button class="chip chip--soft" id="btnHistoryExport">履歴CSV</button>` : ""}
         ${isAdmin ? `<button class="chip chip--soft" id="btnHistoryReset">履歴リセット</button>` : ""}
       </div>
-      <div class="adSlot adSlot--panel" id="adSlotPanel">
-        <div class="adSlot__label">${escapeHtml(tr("ad.label", "広告"))}</div>
-        <div class="adSlot__title">${escapeHtml(tr("ad.recommendTitle", "おすすめサービス"))}</div>
-        <div class="adSlot__body">${escapeHtml(tr("ad.recommendBody", "ここに常時バナー広告が表示されます（実装準備中）"))}</div>
-        <div class="adSlot__live" aria-label="ad slot panel"></div>
-      </div>
+      ${
+        state.projectPath
+          ? `<div class="pathLine" title="${escapeHtml(state.projectPath)}">
+              保存先: <span class="pathValue">${escapeHtml(state.projectPath)}</span>
+            </div>`
+          : ""
+      }
+      ${
+        state.lastFilledPdf
+          ? `<div class="pathLine" title="${escapeHtml(state.lastFilledPdf)}">
+              提出PDF: <span class="pathValue">${escapeHtml(state.lastFilledPdf)}</span>
+            </div>`
+          : ""
+      }
 
+      <div class="glassBox">
+        <div class="row spread">
+          <div class="badge">${state.projectName ? `案件：${escapeHtml(state.projectName)}` : "案件未選択"}</div>
+          <div class="badge">${done}/${total || 0} 完了</div>
+        </div>
+
+        <div class="row" style="margin-top:10px">
+          <div class="field">
+            <div class="label">作業者 ${tipIcon(2, "作業者を選ぶと、その人の入力・進捗でPDFが更新されます。")}</div>
+            <select id="workerSelect">
+              ${state.workers
+                .map((w) => `<option value="${w.id}" ${w.id === state.workerId ? "selected" : ""}>${escapeHtml(w.name)}</option>`)
+                .join("")}
+            </select>
+          </div>
+          ${isAdmin ? `<button class="btn btn--soft" id="btnWorker">編集</button>` : ""}
+        </div>
+
+        <div class="row" style="margin-top:10px">
+          <div class="field" style="flex:1">
+            <div class="label">説明 / 注意 ${tipIcon(3, "作業の注意・締切・補足をここに記載。入力者はここを見ながら進めます。")}</div>
+            <textarea id="infoBox" placeholder="作業の注意・締切・進め方などを記入" rows="3"></textarea>
+          </div>
+        </div>
+
+        <div class="row spread" style="margin-top:12px">
+          <div class="status">
+            <div class="status__pill ${state.working ? (state.inPrivate ? "is-private" : "is-working") : ""}">
+              ${state.working ? (state.inPrivate ? "中断中" : "作業中") : "待機中"}
+            </div>
+            <div class="status__time">${fmtTime(calcNetSeconds())}</div>
+          </div>
+          <div class="ring" style="--p:${progress}">
+            <div class="ring__inner">${progress}%</div>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:12px">
+          <button class="btn btn--primary" id="btnStart" ${state.working ? "disabled" : ""}>作業タイマー開始</button>
+          <button class="btn btn--tint" id="btnPrivate" ${state.working ? "" : "disabled"}>
+            ${state.inPrivate ? "作業タイマー再開" : "作業タイマー中断"}
+          </button>
+          <button class="btn btn--danger" id="btnFinish" ${state.working ? "" : "disabled"}>終了</button>
+        </div>
+      </div>
     </div>
 
     ${
       hasTags
         ? `<div class="focus ${state.justCompleted ? "pop" : ""}">
             <div class="focus__head">
+              <div class="focus__kicker">いま入力する</div>
               <div class="focus__title">${escapeHtml(key)}</div>
-              <div class="focus__meta">${total ? escapeHtml(tr("main.focusMeta", `${idx + 1}/${total} ・ Enterで次へ / Shift+Enterで改行`, { index: idx + 1, total })) : ""}</div>
+              <div class="focus__meta">${total ? `${idx + 1}/${total}` : ""}　・　Enterで次へ / Shift+Enterで改行</div>
             </div>
 
             <div class="focus__body">
-              <textarea class="input textarea focus__input" id="val" placeholder="${escapeHtml(tr("main.inputPlaceholder", "ここに入力…"))}">${escapeHtml(valText)}</textarea>
+              <textarea class="input textarea focus__input" id="val" placeholder="ここに入力…">${escapeHtml(valText)}</textarea>
               <div class="row spread" style="margin-top:10px">
                 <div class="row">
-                  <button class="btn btn--soft" id="btnPrev" ${idx <= 0 ? "disabled" : ""}>${escapeHtml(tr("main.prev", "戻る"))}</button>
-                  <button class="btn btn--primary" id="btnNext" ${idx >= total - 1 ? "disabled" : ""}>${escapeHtml(tr("main.next", "次へ"))}</button>
+                  <button class="btn btn--soft" id="btnPrev" ${idx <= 0 ? "disabled" : ""}>戻る</button>
+                  <button class="btn btn--primary" id="btnNext" ${idx >= total - 1 ? "disabled" : ""}>次へ</button>
+                  <button class="btn btn--soft" id="btnNextEmpty">未入力へ</button>
+                  ${!isAdmin ? `<button class="btn btn--tint" id="btnAddField">欄を追加</button>` : ""}
                 </div>
+                <button class="btn btn--ghost" id="btnClear">クリア</button>
               </div>
-              <div class="row" style="margin-top:14px; gap:8px">
-                <button class="btn btn--soft" id="btnSave" ${state.projectPath ? "" : "disabled"} style="flex:1" title="${isWeb() ? escapeHtml(tr("main.savePdfTitle", "保存して完成PDFをダウンロードします。保存先を選択できます。")) : ""}">${isWeb() ? escapeHtml(tr("main.savePdf", "PDFダウンロード")) : escapeHtml(tr("main.saveOverwrite", "上書き保存"))}</button>
-                <button class="btn btn--soft" id="btnSaveAs" ${state.projectPath ? "" : "disabled"} style="flex:1" title="${isWeb() ? escapeHtml(tr("main.saveProjectTitle", "プロジェクトをZIP（PDF同梱）で保存します。保存先を選択できます。")) : ""}">${isWeb() ? escapeHtml(tr("main.saveProject", "プロジェクトを保存")) : escapeHtml(tr("main.saveAs", "名前を付けて保存"))}</button>
-              </div>
-              <button class="btn btn--danger" id="btnFinish" style="width:100%; margin-top:8px; padding:12px 20px">${escapeHtml(tr("main.finish", "終了"))}</button>
             </div>
           </div>`
-        : (state.projectPath ? `<div style="margin-top:12px">
-            <div class="row" style="gap:8px; margin-bottom:8px">
-              <button class="btn btn--soft" id="btnSave" style="flex:1" title="${isWeb() ? escapeHtml(tr("main.savePdfShortTitle", "保存して完成PDFをダウンロードします。")) : ""}">${isWeb() ? escapeHtml(tr("main.savePdf", "PDFダウンロード")) : escapeHtml(tr("main.saveOverwrite", "上書き保存"))}</button>
-              <button class="btn btn--soft" id="btnSaveAs" style="flex:1" title="${isWeb() ? escapeHtml(tr("main.saveProjectShortTitle", "プロジェクトをZIP（PDF同梱）で保存します。")) : ""}">${isWeb() ? escapeHtml(tr("main.saveProject", "プロジェクトを保存")) : escapeHtml(tr("main.saveAs", "名前を付けて保存"))}</button>
-            </div>
-            <button class="btn btn--danger" id="btnFinish" style="width:100%; padding:12px 20px">${escapeHtml(tr("main.finish", "終了"))}</button>
-          </div>` : "")
+        : ""
     }
-    ${!isWeb() ? `<div class="glassBox" style="margin-top:10px">
-      ${state.lastProjectDir ? `<div class="pathLine" title="${escapeHtml(state.lastProjectDir)}">前回開いたフォルダ: <span class="pathValue">${escapeHtml(state.lastProjectDir)}</span></div>` : ""}
-      ${state.projectPath ? `<div class="pathLine" title="${escapeHtml(state.projectPath)}">保存先: <span class="pathValue">${escapeHtml(state.projectPath)}</span></div>` : ""}
-      ${state.lastFilledPdf ? `<div class="pathLine" title="${escapeHtml(state.lastFilledPdf)}">提出PDF: <span class="pathValue">${escapeHtml(state.lastFilledPdf)}</span></div>` : ""}
-    </div>` : ""}
-    <div class="adSlot adSlot--panelBottom" id="adSlotPanelBottom" style="margin-top:auto">
-      <div class="adSlot__label">${escapeHtml(tr("ad.label", "広告"))}</div>
-      <div class="adSlot__title">${escapeHtml(tr("ad.recommendTitle", "おすすめサービス"))}</div>
-      <div class="adSlot__body">${escapeHtml(tr("ad.recommendBody", "ここに常時バナー広告が表示されます（実装準備中）"))}</div>
-      <div class="adSlot__live" aria-label="ad slot panel bottom"></div>
-    </div>
   `
 
   const right = `
     ${
       state.projectPath
         ? `<div class="previewImg">
-            <div class="previewScale" id="previewScale">
+            <div class="previewScale" id="previewScale" style="transform: scale(${Number(state.viewZoom || 1) || 1}); transform-origin: 50% 50%;">
               <img id="previewImg" alt="preview" draggable="false" />
             </div>
             <div class="previewHud">
               <div class="previewHud__left">
-                <span class="badge">ライブプレビュー</span>
+                <span class="badge">ライブプレビュー ${tipIcon(4, "入力した値がPDF画像に重ねて表示されます。ページ切替で別ページも確認できます。")}</span>
               </div>
               <div class="previewHud__right">
-                <button class="btn btn--soft" id="btnPrevPage">${escapeHtml(tr("main.prevPage", "前"))}</button>
-                <button class="btn btn--soft" id="pageIndicator" title="ページ番号を入力して移動">${(state.previewPageIndex || 0) + 1} / ${state.pageCount || 1}</button>
-                <button class="btn btn--soft" id="btnNextPage">${escapeHtml(tr("main.nextPage", "次"))}</button>
+                <button class="btn btn--soft" id="btnPrevPage">前</button>
+                <span class="badge" id="pageIndicator">${(state.previewPageIndex || 0) + 1} / ${state.pageCount || 1}</span>
+                <button class="btn btn--soft" id="btnNextPage">次</button>
                 <button class="btn btn--soft" id="btnZoomOut">−</button>
                 <span class="badge" id="zoomIndicator">${Math.round((Number(state.viewZoom || 1) || 1) * 100)}%</span>
                 <button class="btn btn--soft" id="btnZoomIn">＋</button>
                 <button class="btn btn--soft" id="btnZoomReset">100%</button>
+                <button class="btn btn--soft" id="btnTogglePanel">${state.showPanel ? "操作欄:ON" : "操作欄:OFF"}</button>
               </div>
             </div>
             <canvas id="confetti" class="confetti" aria-hidden="true"></canvas>
@@ -1421,7 +992,7 @@ function render() {
                 : ""
             }
           </div>`
-        : `<div class="previewPlaceholder">プロジェクトZIPを開くとPDFがここに表示されます</div>`
+        : `<div class="previewPlaceholder">案件を開くとPDFがここに表示されます</div>`
     }
   `
 
@@ -1440,7 +1011,6 @@ function render() {
     <div class="toast" id="toast"></div>
     <div class="modal" id="modal" style="display:none"></div>
   `
-  refreshAdSlots()
 
   bind()
   queuePreview()
@@ -1454,7 +1024,6 @@ function render() {
 function bind() {
   // Tooltips that never go off-screen
   bindTipFloatOnce()
-  applyPreviewTransform()
 
   // Global hotkeys (selection / undo / copy-paste)
   document.onkeydown = async (ev) => {
@@ -1554,21 +1123,8 @@ function bind() {
       return
     }
 
-    // Arrow keys:
-    // - Multi-page projects: page navigation with plain arrows
-    // - Element nudge: Alt + arrows
+    // Nudge with arrows
     if (k === "ArrowLeft" || k === "ArrowRight" || k === "ArrowUp" || k === "ArrowDown") {
-      const hasMultiPage = Number(state.pageCount || 1) > 1
-      const plainArrow = !ev.altKey && !ctrl
-      if (hasMultiPage && plainArrow) {
-        ev.preventDefault()
-        state.pageLocked = true
-        const cur = Number.isFinite(state.previewPageIndex) ? state.previewPageIndex : 0
-        const delta = (k === "ArrowRight" || k === "ArrowDown") ? 1 : -1
-        await showPage(cur + delta)
-        return
-      }
-      if (!ev.altKey) return
       if (!state.selectKeys.length) return
       ev.preventDefault()
       const step = ev.shiftKey ? 10 : 1
@@ -1593,17 +1149,9 @@ function bind() {
     }
   }
 
-  const btnOpen = $("#btnOpen")
-  if (btnOpen) btnOpen.onclick = async () => {
-    const okToProceed = await showUnlockAd("zip_open")
-    if (!okToProceed) return
-    const r = await window.pywebview.api.pick_project(
-      window.__INPUTSTUDIO_WEB__ ? { zipOnly: true } : undefined
-    )
-    if (!r.ok) {
-      if (r.error) toast(apiErrorMessage(r, r.error))
-      return
-    }
+  $("#btnOpen").onclick = async () => {
+    const r = await window.pywebview.api.pick_project()
+    if (!r.ok) return
     try {
       const dir = r.path?.replace(/[/\\][^/\\]+$/, "")
       if (dir) {
@@ -1629,7 +1177,7 @@ function bind() {
     state.timerStart = null
     state.privateTotal = 0
     const started = await autoStartWorkIfPossible()
-    toast(started ? tr("main.toast.projectLoadedAndTimer", "案件を読み込み、作業タイマーを開始しました") : tr("main.toast.projectLoaded", "案件を読み込みました"))
+    toast(started ? "案件を読み込み、作業タイマーを開始しました" : "案件を読み込みました")
     render()
     await queuePreview()
   }
@@ -1691,7 +1239,7 @@ function bind() {
       try {
         await loadPdfInBrowser(file)
       } catch (e) {
-        await uiAlert(`PDF読み込みに失敗しました: ${e}`)
+        alert(`PDF読み込みに失敗しました: ${e}`)
       } finally {
         demoPdfFile.value = ""
       }
@@ -1709,21 +1257,19 @@ function bind() {
       const pick = api?.pick_pdf
       const createSimple = api?.create_project_from_pdf_simple
       if (!pick || !createSimple) {
-        await uiAlert("PDFから新規作成する機能が見つかりません。最新版またはバックエンドの create_project_from_pdf_simple/pick_pdf をご用意ください。")
+        alert("PDFから新規作成する機能が見つかりません。最新版またはバックエンドの create_project_from_pdf_simple/pick_pdf をご用意ください。")
         return
       }
       const r = await pick()
       if (!r?.ok) return
-      toast(tr("gate.toastCreateProjectFromPdf", "PDFを読み込み、新規プロジェクトを作成します…"))
+      toast("PDFを読み込み、新規プロジェクトを作成します…")
       const g = await createSimple(r.path)
       if (!g?.ok || !g.path) {
-        await uiAlert((g?.errors || ["PDFをプロジェクト化できませんでした"]).join("\n"))
-        return
+        return alert((g?.errors || ["PDFをプロジェクト化できませんでした"]).join("\n"))
       }
       const loaded = await api.load_project(g.path)
       if (!loaded?.ok) {
-        await uiAlert("新規プロジェクトを開けませんでした")
-        return
+        return alert("新規プロジェクトを開けませんでした")
       }
       state.projectPath = g.path
       state.projectName = loaded.project
@@ -1749,7 +1295,7 @@ function bind() {
       toast(started ? "新規案件を作成し、作業タイマーを開始しました" : "PDFから新規プロジェクトを作成しました。必要に応じてタグを配置してください。")
       render()
     } catch (e) {
-      await uiAlert(`PDFから新規作成に失敗しました: ${e}`)
+      alert(`PDFから新規作成に失敗しました: ${e}`)
     }
   }
 
@@ -1781,13 +1327,6 @@ function bind() {
 
   // フォーム付きPDFを扱わない前提のため、自動作成機能は削除
 
-  const btnBackToGate = $("#btnBackToGate")
-  if (btnBackToGate) btnBackToGate.onclick = () => {
-    state.appStage = "gate"
-    state.gate = state.gate || { error: "" }
-    render()
-  }
-
   const btnDesign = $("#btnDesign")
   if (btnDesign) btnDesign.onclick = async () => {
     if (!state.projectPath) return toast("先に案件を開いてください")
@@ -1801,20 +1340,13 @@ function bind() {
   if (btnSave) btnSave.onclick = async () => {
     if (!state.projectPath) return toast("先に案件を開いてください")
     try {
-      toast(isWeb() ? "保存してPDFをダウンロードします…" : "保存中…")
       const r = await window.pywebview.api.save_current_project(true)
-      if (!r?.ok) return toast(`保存に失敗: ${r?.error || "unknown"}`)
       state.lastSession = { path: state.projectPath, workerId: state.workerId, projectName: state.projectName }
       saveLocal("inputstudio-last-session", state.lastSession)
       if (r?.filled_pdf) state.lastFilledPdf = r.filled_pdf
       if (r?.exports_dir) state.lastExportDir = r.exports_dir
-      toast(isWeb() ? "保存しました。保存先を選んでください。" : "案件を保存しました（PDFも生成）")
-      if (isWeb() && window.pywebview?.api?.download_filled_pdf) {
-        const dl = await window.pywebview.api.download_filled_pdf()
-        if (dl?.error === "cancelled") toast("保存をキャンセルしました")
-        else if (!dl?.ok) toast(`PDFダウンロードに失敗: ${dl?.error || "unknown"}`)
-        else toast("PDFを保存しました")
-      }
+      toast("案件を保存しました（PDFも生成）")
+      markClean()
       render()
     } catch (e) {
       toast(`保存に失敗しました: ${e}`)
@@ -1825,23 +1357,9 @@ function bind() {
   if (btnSaveAs) btnSaveAs.onclick = async () => {
     if (!state.projectPath) return toast("先に案件を開いてください")
     const name0 = String(state.projectName || "案件").trim() || "案件"
+    const name = prompt("名前を付けて保存（新しい案件名）", `${name0}-コピー`)
+    if (!name) return
     try {
-      if (isWeb()) {
-        toast("プロジェクトを保存します…")
-        if (window.pywebview?.api?.save_project_to_picker) {
-          const r = await window.pywebview.api.save_project_to_picker(name0)
-          if (r?.error === "cancelled") toast("保存をキャンセルしました")
-          else if (!r?.ok) toast(`プロジェクト保存に失敗: ${r?.error || "unknown"}`)
-          else toast("プロジェクトを保存しました")
-        } else {
-          toast("プロジェクト保存機能が見つかりません")
-        }
-        pulse()
-        render()
-        return
-      }
-      const name = await uiPrompt("名前を付けて保存（新しい案件名）", `${name0}-コピー`)
-      if (!name) return
       const r = await window.pywebview.api.save_project_as(String(name), true)
       if (!r?.ok || !r.path) return toast(`保存に失敗: ${r?.error || "unknown"}`)
       const loaded = await window.pywebview.api.load_project(r.path)
@@ -1868,68 +1386,24 @@ function bind() {
     }
   }
 
-  const btnAppendPdf = $("#btnAppendPdf")
-  if (btnAppendPdf) {
-    btnAppendPdf.onclick = async () => {
-      if (!state.projectPath) return toast("先に案件を開いてください")
-      const okToProceed = await showUnlockAd("pdf_append")
-      if (!okToProceed) return
-      const api = window.pywebview?.api
-      if (!api?.pick_pdf || !api?.append_pdf_to_project) return toast("PDF追加機能が見つかりません（最新版に更新してください）")
-      const curr = Number(state.previewPageIndex || 0) || 0
-      const r = await api.pick_pdf()
-      if (!r?.ok || !r.path) return
-      toast(tr("main.toast.appendProcessing", "PDFを追加して結合中…"))
-      const a = await api.append_pdf_to_project(r.path)
-      if (!a?.ok) return toast(`PDF追加に失敗: ${apiErrorMessage(a, "unknown")}`)
-      state.pageCount = a.page_count || state.pageCount
-      render()
-      await showPage(curr)
-      toast(tr("main.toast.appendDone", `PDFを追加しました（合計 ${state.pageCount} ページ）`, { pages: state.pageCount }))
-    }
-  }
-  const btnCopyPageOp = $("#btnCopyPageOp")
-  if (btnCopyPageOp) {
-    btnCopyPageOp.onclick = async () => {
-      if (!state.projectPath) return toast("先に案件を開いてください")
-      const api = window.pywebview?.api
-      if (!api?.copy_page_with_elements) return toast("ページコピー機能が見つかりません（最新版に更新してください）")
-      const curr = Number(state.previewPageIndex || 0) || 0
-      const r = await api.copy_page_with_elements(curr)
-      if (!r?.ok) return toast(`ページコピーに失敗: ${apiErrorMessage(r, "unknown")}`)
-      state.pageCount = Number(r.page_count || state.pageCount) || state.pageCount
-      state.placements = r.placements && typeof r.placements === "object" ? r.placements : state.placements
-      render()
-      await showPage(Number(r.page_index ?? (curr + 1)))
-      toast(tr("main.toast.copyDone", "ページをコピーしました"))
-    }
-  }
-  const btnDeletePageOp = $("#btnDeletePageOp")
-  if (btnDeletePageOp) {
-    btnDeletePageOp.onclick = async () => {
-      if (!state.projectPath) return toast("先に案件を開いてください")
-      const api = window.pywebview?.api
-      if (!api?.delete_page_from_project) return toast("ページ削除機能が見つかりません（最新版に更新してください）")
-      const curr = Number(state.previewPageIndex || 0) || 0
-      const ok = await uiConfirm(tr("dialog.confirmDeletePage", "現在ページを削除します。配置済み要素も対象ページ分は削除されます。よろしいですか？"))
+  const btnAddPdf = $("#btnAddPdf")
+  if (btnAddPdf) btnAddPdf.onclick = async () => {
+    if (!state.projectPath) return toast("先に案件を開いてください")
+    const api = window.pywebview?.api
+    if (!api?.pick_pdf || !api?.append_pdf_to_project) return toast("PDF追加機能が見つかりません（最新版に更新してください）")
+    if (state.uiMode !== "admin") {
+      const ok = confirm("この案件にPDFを追加します。ページ数が増え、配置は全ページに対して有効になります。\n（管理者に確認済みですか？）")
       if (!ok) return
-      const r = await api.delete_page_from_project(curr)
-      if (!r?.ok) return toast(`ページ削除に失敗: ${apiErrorMessage(r, "unknown")}`)
-      state.pageCount = Number(r.page_count || state.pageCount) || state.pageCount
-      state.tags = Array.isArray(r.tags) ? r.tags : state.tags
-      state.values = r.values && typeof r.values === "object" ? r.values : state.values
-      state.placements = r.placements && typeof r.placements === "object" ? r.placements : state.placements
-      render()
-      await showPage(Number(r.page_index ?? Math.max(0, curr - 1)))
-      toast(tr("main.toast.deleteDone", "ページを削除しました"))
     }
-  }
-  const btnReorderPdf = $("#btnReorderPdf")
-  if (btnReorderPdf) {
-    btnReorderPdf.onclick = async () => {
-      if (!state.projectPath) return toast("先に案件を開いてください")
-      await openPageOpsModal()
-    }
+    const r = await api.pick_pdf()
+    if (!r?.ok || !r.path) return
+    toast("PDFを追加して結合中…")
+    const a = await api.append_pdf_to_project(r.path)
+    if (!a?.ok) return toast(`PDF追加に失敗: ${a?.error || "unknown"}`)
+    state.pageCount = a.page_count || state.pageCount
+    toast(`PDFを追加しました（合計 ${state.pageCount} ページ）`)
+    await showPage(state.previewPageIndex || 0)
+    render()
   }
 
   const btnOpenSaved = $("#btnOpenSaved")
@@ -1979,30 +1453,34 @@ function bind() {
     state.pageLocked = true
     showPage((state.previewPageIndex || 0) + 1)
   }
-  const pageIndicator = $("#pageIndicator")
-  if (pageIndicator) pageIndicator.onclick = async () => {
-    const total = Math.max(1, Number(state.pageCount || 1))
-    const cur = (Number(state.previewPageIndex || 0) || 0) + 1
-    const raw = await uiPrompt(tr("dialog.gotoPage", `移動先ページを入力してください（1-${total}）`, { total }), String(cur))
-    if (raw == null) return
-    const n = Number(String(raw).trim())
-    if (!Number.isFinite(n)) return toast("ページ番号が不正です")
-    const idx = Math.max(1, Math.min(total, Math.floor(n))) - 1
-    state.pageLocked = true
-    await showPage(idx)
-  }
 
+  const setZoom = async (z) => {
+    const next = Math.max(0.5, Math.min(2.5, Number(z || 1) || 1))
+    state.viewZoom = next
+    // persist (best-effort)
+    try {
+      await window.pywebview.api.update_admin_settings?.({ view_zoom: next })
+    } catch {}
+    // update DOM without full rerender if possible
+    const sc = $("#previewScale")
+    if (sc) sc.style.transform = `scale(${next})`
+    const zi = $("#zoomIndicator")
+    if (zi) zi.textContent = `${Math.round(next * 100)}%`
+    drawOverlay()
+  }
   const btnZoomOut = $("#btnZoomOut")
-  if (btnZoomOut) btnZoomOut.onclick = () => setViewZoom((Number(state.viewZoom || 1) || 1) - 0.1)
+  if (btnZoomOut) btnZoomOut.onclick = () => setZoom((Number(state.viewZoom || 1) || 1) - 0.1)
   const btnZoomIn = $("#btnZoomIn")
-  if (btnZoomIn) btnZoomIn.onclick = () => setViewZoom((Number(state.viewZoom || 1) || 1) + 0.1)
+  if (btnZoomIn) btnZoomIn.onclick = () => setZoom((Number(state.viewZoom || 1) || 1) + 0.1)
   const btnZoomReset = $("#btnZoomReset")
-  if (btnZoomReset)
-    btnZoomReset.onclick = () => {
-      state.viewPanX = 0
-      state.viewPanY = 0
-      setViewZoom(1.0)
-    }
+  if (btnZoomReset) btnZoomReset.onclick = () => setZoom(1.0)
+
+  const btnTogglePanel = $("#btnTogglePanel")
+  if (btnTogglePanel) btnTogglePanel.onclick = () => {
+    state.showPanel = !state.showPanel
+    saveLocal("inputstudio-show-panel", state.showPanel)
+    render()
+  }
 
   const btnAddFromCenter = $("#btnAddFromCenter")
   if (btnAddFromCenter) btnAddFromCenter.onclick = () => {
@@ -2022,7 +1500,7 @@ function bind() {
 
   const btnAdmin = $("#btnAdmin")
   if (btnAdmin) btnAdmin.onclick = async () => {
-    const ok = await uiConfirm(tr("dialog.switchAdmin", "管理者モードに切り替えます（OCR/設計が表示されます）。よろしいですか？"))
+    const ok = confirm("管理者モードに切り替えます（OCR/設計が表示されます）。よろしいですか？")
     if (!ok) return
     const r = await window.pywebview.api.set_ui_mode("admin")
     if (!r.ok) return toast("切り替えに失敗しました")
@@ -2033,7 +1511,7 @@ function bind() {
 
   const btnLock = $("#btnLock")
   if (btnLock) btnLock.onclick = async () => {
-    const ok = await uiConfirm(tr("dialog.switchWorker", "入力者モードに切り替えます（OCR/設計を隠します）。よろしいですか？"))
+    const ok = confirm("入力者モードに切り替えます（OCR/設計を隠します）。よろしいですか？")
     if (!ok) return
     const r = await window.pywebview.api.set_ui_mode("worker")
     if (!r.ok) return toast("切り替えに失敗しました")
@@ -2044,17 +1522,14 @@ function bind() {
     render()
   }
 
-  const workerSelect = $("#workerSelect")
-  if (workerSelect) {
-    workerSelect.onchange = async (e) => {
-      state.workerId = e.target.value
-      saveLocal("inputstudio-last-worker", state.workerId)
-      if (!state.working) {
-        const started = await autoStartWorkIfPossible()
-        if (started) {
-          toast("作業タイマーを開始しました")
-          render()
-        }
+  $("#workerSelect").onchange = async (e) => {
+    state.workerId = e.target.value
+    saveLocal("inputstudio-last-worker", state.workerId)
+    if (!state.working) {
+      const started = await autoStartWorkIfPossible()
+      if (started) {
+        toast("作業タイマーを開始しました")
+        render()
       }
     }
   }
@@ -2082,16 +1557,15 @@ function bind() {
   const btnHistoryExport = $("#btnHistoryExport")
   if (btnHistoryExport) btnHistoryExport.onclick = historyExport
   const btnHistoryReset = $("#btnHistoryReset")
-  if (btnHistoryReset) btnHistoryReset.onclick = async () => {
-    const ok = await uiConfirm(tr("dialog.resetHistory", "作業履歴をリセットします（内部保存のみ削除、プロジェクトは残ります）。よろしいですか？"))
+  if (btnHistoryReset) btnHistoryReset.onclick = () => {
+    const ok = confirm("作業履歴をリセットします（内部保存のみ削除、プロジェクトは残ります）。よろしいですか？")
     if (!ok) return
     state.history = []
     saveLocal("inputstudio-history", state.history)
     toast("履歴をリセットしました")
   }
 
-  const btnStart = $("#btnStart")
-  if (btnStart) btnStart.onclick = async () => {
+  $("#btnStart").onclick = async () => {
     if (!state.projectPath) return toast("先に案件を開いてください")
     if (!state.workerId) return toast("作業者を選んでください")
     const r = await window.pywebview.api.start_work(state.workerId)
@@ -2108,8 +1582,7 @@ function bind() {
     render()
   }
 
-  const btnPrivate = $("#btnPrivate")
-  if (btnPrivate) btnPrivate.onclick = async () => {
+  $("#btnPrivate").onclick = async () => {
     const r = await window.pywebview.api.toggle_private()
     if (!r.ok) return
     if (!state.inPrivate) {
@@ -2125,9 +1598,8 @@ function bind() {
     render()
   }
 
-  const btnFinish = $("#btnFinish")
-  if (btnFinish) btnFinish.onclick = async () => {
-    const ok = await uiConfirm(tr("dialog.finishWork", "勤務を終了して提出物（ZIP）を作成します。よろしいですか？"))
+  $("#btnFinish").onclick = async () => {
+    const ok = confirm("勤務を終了して提出物（ZIP）を作成します。よろしいですか？")
     if (!ok) return
     await pushValue()
     toast("提出物を作成中…")
@@ -2232,7 +1704,7 @@ function bind() {
   if (btnAddField) {
     btnAddField.onclick = async () => {
       if (!state.projectPath) return toast("先に案件を開いてください")
-      const name = (await uiPrompt("追加する欄の名前（例：備考2 / メモ / 追記）", "")) || ""
+      const name = prompt("追加する欄の名前（例：備考2 / メモ / 追記）", "") || ""
       const n = name.trim()
       if (!n) return
       state.addDraftName = n
@@ -2250,17 +1722,6 @@ function bind() {
         e.preventDefault()
         if (state.idx < state.tags.length - 1) {
           if (btnNext?.onclick) await btnNext.onclick()
-          // Enterで次へ進んだ直後、次項目の入力欄にフォーカスを戻す
-          setTimeout(() => {
-            const nextVal = $("#val")
-            if (nextVal) {
-              nextVal.focus()
-              const len = String(nextVal.value || "").length
-              try {
-                nextVal.setSelectionRange(len, len)
-              } catch {}
-            }
-          }, 0)
         }
       }
     })
@@ -2279,17 +1740,6 @@ function bind() {
   if (ov) {
     // enable overlay interactions for selection/editing
     enableOverlayPointer(!!state.projectPath)
-    const previewHost = ov.parentElement
-    if (previewHost) {
-      previewHost.addEventListener("wheel", (ev) => {
-        if (!state.projectPath) return
-        ev.preventDefault()
-        const withCtrl = !!(ev.ctrlKey || ev.metaKey)
-        const step = withCtrl ? 0.2 : 0.1
-        const dir = ev.deltaY > 0 ? -step : step
-        setViewZoom((Number(state.viewZoom || 1) || 1) + dir)
-      }, { passive: false })
-    }
     const toPageXY = (ev) => {
       const img = $("#previewImg")
       if (!img || !img.src) return null
@@ -2326,11 +1776,6 @@ function bind() {
     let dragUndo = null
     let clickTag = null
     let moved = false
-    let panning = false
-    let panStartX = 0
-    let panStartY = 0
-    let panBaseX = 0
-    let panBaseY = 0
 
     // PDFをダブルクリック -> 配置パレット（作業者でも使える）
     ov.ondblclick = (ev) => {
@@ -2346,18 +1791,6 @@ function bind() {
     ov.onpointerdown = (ev) => {
       if (!state.projectPath) return
       if (state.designMode) return
-      if (ev.button === 1 || ev.altKey) {
-        panning = true
-        panStartX = ev.clientX
-        panStartY = ev.clientY
-        panBaseX = Number(state.viewPanX || 0) || 0
-        panBaseY = Number(state.viewPanY || 0) || 0
-        try {
-          ov.setPointerCapture?.(ev.pointerId)
-        } catch {}
-        ev.preventDefault()
-        return
-      }
       if (state.addMode) return
       // ignore if starting on modal etc
       const p = toPageXY(ev)
@@ -2395,15 +1828,6 @@ function bind() {
     }
 
     ov.onpointermove = (ev) => {
-      if (panning) {
-        const dx = ev.clientX - panStartX
-        const dy = ev.clientY - panStartY
-        state.viewPanX = panBaseX + dx
-        state.viewPanY = panBaseY + dy
-        applyPreviewTransform()
-        drawOverlay()
-        return
-      }
       if (!dragging || !dragStart || !dragBase) return
       const p = toPageXY(ev)
       if (!p) return
@@ -2422,10 +1846,6 @@ function bind() {
     }
 
     ov.onpointerup = async () => {
-      if (panning) {
-        panning = false
-        return
-      }
       if (!dragging) {
         clickTag = null
         return
@@ -2484,17 +1904,17 @@ function bind() {
         state.addMode = false
         enableOverlayPointer(false)
         drawOverlay()
-        await uiAlert(`追加に失敗: ${r.error || "unknown"}`)
-        return
+        return alert(`追加に失敗: ${r.error || "unknown"}`)
       }
       const fid = r.fid
       const tag = r.tag
       if (!state.tags.includes(tag)) state.tags.push(tag)
       if (state.values[tag] == null) state.values[tag] = ""
-      state.placements[fid] = { tag, page: state.previewPageIndex || 0, x, y, font_size: fs, color: "#0f172a", line_height: 1.2, letter_spacing: DEFAULT_LETTER_SPACING }
+      state.placements[fid] = { tag, page: state.previewPageIndex || 0, x, y, font_size: fs, color: "#0f172a", line_height: 1.2, letter_spacing: 0 }
       state.selectKeys = [fid]
       state.idx = state.tags.indexOf(tag)
       await window.pywebview.api.save_current_project(false)
+      markDirty()
       state.addMode = false
       enableOverlayPointer(false)
       toast(`追加しました：${tag}`)
@@ -2520,6 +1940,7 @@ async function pushValue() {
   const value = raw.replaceAll("\n", "<br>")
   state.values[key] = value
   await window.pywebview.api.set_value(key, value)
+  markDirty()
   queuePreview(key)
 }
 
@@ -2657,32 +2078,6 @@ function openFinishModal(result) {
     modal.innerHTML = ""
   }
 
-  if (isWeb()) {
-    modal.style.display = "block"
-    modal.innerHTML = `
-      <div class="modal__backdrop" id="modalClose"></div>
-      <div class="modal__card" style="max-width:480px">
-        <div class="modal__title">提出データを作成しました</div>
-        <div class="label" style="margin-top:6px; line-height:1.7">
-          完成PDFをダウンロードしました。メールに添付して送信してください。お疲れ様でした！
-        </div>
-        <div class="row" style="margin-top:14px; justify-content:flex-end; gap:10px">
-          <button class="btn btn--primary" id="btnFinishDownload">PDFを再ダウンロード</button>
-          <button class="btn btn--soft" id="btnFinishClose">閉じる</button>
-        </div>
-      </div>
-    `
-    $("#modalClose").onclick = close
-    $("#btnFinishClose").onclick = close
-    $("#btnFinishDownload").onclick = async () => {
-      if (window.pywebview?.api?.download_filled_pdf) {
-        await window.pywebview.api.download_filled_pdf()
-        toast("ダウンロードを開始しました")
-      }
-    }
-    return
-  }
-
   modal.style.display = "block"
   modal.innerHTML = `
     <div class="modal__backdrop" id="modalClose"></div>
@@ -2739,133 +2134,6 @@ function openFinishModal(result) {
         toast(String(target))
       }
     }
-}
-
-async function openPageOpsModal() {
-  const modal = $("#modal")
-  if (!modal) return
-  const close = () => {
-    modal.style.display = "none"
-    modal.innerHTML = ""
-  }
-  modal.style.display = "block"
-  modal.innerHTML = `
-    <div class="modal__backdrop" id="modalClose"></div>
-    <div class="modal__card" style="width:min(1200px, calc(100vw - 40px)); max-width:1200px">
-      <div class="modal__title">PDF並べ替え</div>
-      <div class="label" style="line-height:1.7">現在ページ: ${(Number(state.previewPageIndex || 0) || 0) + 1} / ${Math.max(1, Number(state.pageCount || 1))}</div>
-      <div class="label" style="margin-top:10px">下のカードをドラッグ&ドロップして直感的に並び替えできます。</div>
-      <div class="pageOpsBoard" id="pageOpsBoard"></div>
-      <div class="row" style="margin-top:14px; justify-content:flex-end">
-        <button class="btn btn--primary" id="poApplyOrder" disabled>並び替えを保存</button>
-        <button class="btn btn--soft" id="poClose">閉じる</button>
-      </div>
-    </div>
-  `
-  $("#modalClose").onclick = close
-  $("#poClose").onclick = close
-
-  const api = window.pywebview?.api
-  const curr = Number(state.previewPageIndex || 0) || 0
-  const totalPages = Math.max(1, Number(state.pageCount || 1) || 1)
-  let order = Array.from({ length: totalPages }, (_, i) => i)
-  let dragPos = -1
-  const poApplyOrder = $("#poApplyOrder")
-  const board = $("#pageOpsBoard")
-
-  const renderBoard = async () => {
-    if (!board) return
-    const pageModels = await Promise.all(
-      order.map(async (oldPageIdx, pos) => {
-        const pr = await api.get_preview_png_base64_page(oldPageIdx)
-        const src = pr?.ok ? String(pr.png || "") : ""
-        const srcData = pr?.ok ? String(pr.png_data || "") : ""
-        return {
-          pos,
-          oldPageIdx,
-          src,
-          srcData,
-        }
-      })
-    )
-    const modelByPos = new Map(pageModels.map((m) => [m.pos, m]))
-    const cards = pageModels
-      .map(({ pos, oldPageIdx, src, srcData }) => {
-        const initialSrc = src || srcData || ""
-        const hasImage = !!initialSrc
-        const currentCls = oldPageIdx === curr ? " is-current" : ""
-        return `
-          <div class="pageCard${currentCls}" draggable="true" data-pos="${pos}" data-old="${oldPageIdx}">
-            <div class="pageCard__thumb">${hasImage ? `<img class="pageCardImg" draggable="false" data-pos="${pos}" src="${escapeHtml(initialSrc)}" alt="page ${oldPageIdx + 1}" />` : "<div class=\"pageCard__noimg\">No Image</div>"}</div>
-            <div class="pageCard__meta">
-              <span class="badge">表示順 ${pos + 1}</span>
-              <span class="badge badge--soft">元ページ ${oldPageIdx + 1}</span>
-            </div>
-          </div>
-        `
-      })
-      .join("")
-    board.innerHTML = cards
-
-    board.querySelectorAll(".pageCardImg").forEach((img) => {
-      img.addEventListener("error", () => {
-        const pos = Number(img.getAttribute("data-pos") || "-1")
-        const model = modelByPos.get(pos)
-        if (!model) return
-        const current = String(img.getAttribute("src") || "")
-        if (model.srcData && current !== model.srcData) {
-          img.setAttribute("src", model.srcData)
-          return
-        }
-      })
-    })
-
-    board.querySelectorAll(".pageCard").forEach((el) => {
-      el.addEventListener("dragstart", (ev) => {
-        dragPos = Number(el.getAttribute("data-pos") || "-1")
-        ev.dataTransfer?.setData("text/plain", String(dragPos))
-        ev.dataTransfer.effectAllowed = "move"
-      })
-      el.addEventListener("dragover", (ev) => {
-        ev.preventDefault()
-        el.classList.add("is-over")
-      })
-      el.addEventListener("dragleave", () => {
-        el.classList.remove("is-over")
-      })
-      el.addEventListener("drop", (ev) => {
-        ev.preventDefault()
-        el.classList.remove("is-over")
-        const toPos = Number(el.getAttribute("data-pos") || "-1")
-        const fromPos = Number(ev.dataTransfer?.getData("text/plain") || dragPos)
-        if (fromPos < 0 || toPos < 0 || fromPos === toPos) return
-        const next = [...order]
-        const [moved] = next.splice(fromPos, 1)
-        next.splice(toPos, 0, moved)
-        order = next
-        if (poApplyOrder) poApplyOrder.disabled = false
-        renderBoard()
-      })
-    })
-  }
-
-  await renderBoard()
-
-  if (poApplyOrder) {
-    poApplyOrder.onclick = async () => {
-      if (!api?.reorder_pages) return toast("ページ並び替え機能が見つかりません（最新版に更新してください）")
-      const newCurrent = Math.max(0, order.indexOf(curr))
-      toast("ページ順を保存中…")
-      const r = await api.reorder_pages(order)
-      if (!r?.ok) return toast(`ページ並び替えに失敗: ${apiErrorMessage(r, "unknown")}`)
-      state.pageCount = Number(r.page_count || state.pageCount) || state.pageCount
-      state.placements = r.placements && typeof r.placements === "object" ? r.placements : state.placements
-      close()
-      render()
-      await showPage(newCurrent)
-      toast("ページ順を更新しました")
-    }
-  }
 }
 
 function pulse() {
@@ -2953,7 +2221,7 @@ function openWorkerModal(opts = {}) {
     }
     const btnDel = $("#mDelete")
     if (mode === "manage" && btnDel) btnDel.onclick = async () => {
-      const ok = await uiConfirm(tr("dialog.deleteWorker", "この作業者を削除しますか？"))
+      const ok = confirm("この作業者を削除しますか？")
       if (!ok) return
       const r = await window.pywebview.api.delete_worker?.(String(editingId))
       if (!r?.ok) return toast(`削除に失敗: ${r?.error || "unknown"}`)
@@ -3136,10 +2404,7 @@ async function openDesignModal() {
   }
   $("#dSave").onclick = async () => {
     const r = await window.pywebview.api.save_current_project(false)
-    if (!r.ok) {
-      await uiAlert(`保存に失敗: ${r.error || "unknown"}`)
-      return
-    }
+    if (!r.ok) return alert(`保存に失敗: ${r.error || "unknown"}`)
     toast("保存しました")
     pulse()
   }
@@ -3268,7 +2533,7 @@ function openPlacePalette(pt, editFid = null) {
   const defaultFs = Number(currentPl.font_size || state.defaultFontSize || 14) || 14
   const curColor = String(currentPl.color || "#0f172a")
   const curLH = Number(currentPl.line_height || 1.2) || 1.2
-  const curLS = Number(currentPl.letter_spacing ?? DEFAULT_LETTER_SPACING) || DEFAULT_LETTER_SPACING
+  const curLS = Number(currentPl.letter_spacing || 0) || 0
   let writingMode = String(currentPl.writing_mode || "horizontal")
   const tagsOptions = state.tags.map((t) => `<option value="${escapeHtml(t)}"></option>`).join("")
   modal.style.display = "block"
@@ -3276,10 +2541,11 @@ function openPlacePalette(pt, editFid = null) {
     <div class="modal__backdrop" id="modalClose"></div>
     <div class="modal__card modal__card--anchored" id="paletteCard" style="max-width:520px">
       <div class="modal__title">${isEdit ? "要素を編集" : "PDFに配置（ダブルクリック）"}</div>
-      <div class="label">${isEdit ? "選択中の要素の値・見た目を調整します。" : "タグ一覧でクリックして選択するか、タグ名を直接入力して配置します。"}</div>
+      <div class="label">${isEdit ? "選択中の要素の値・見た目を調整します。" : "タグを選ぶ or 新規作成し、値とサイズを指定して配置します。"}</div>
       <div class="field" style="margin-top:8px">
-        <div class="label">タグ</div>
-        <input class="input" id="pTag" placeholder="タグ名（一覧でクリック or 新規入力）" ${isEdit ? "disabled" : ""} />
+        <div class="label">タグ（既存 or 新規）</div>
+        <input class="input" list="paletteTags" id="pTag" placeholder="例）氏名 / 住所" ${isEdit ? "disabled" : ""} />
+        <datalist id="paletteTags">${tagsOptions}</datalist>
       </div>
       <div class="field">
         <div class="label">値</div>
@@ -3354,7 +2620,7 @@ function openPlacePalette(pt, editFid = null) {
         <div class="label">検索</div>
         <input class="input" id="tagSearch" placeholder="例）氏名 / 住所 / 金額 …" />
       </div>
-      <div class="badge badge--soft" style="margin-top:8px">タグ名をクリックで選択 → 値は即反映</div>
+      <div class="badge badge--soft" style="margin-top:8px">クリックで「配置タグ」にセット / 値は即反映</div>
       <div class="tagPane" id="tagQuickPane" style="margin-top:10px; max-height: calc(100vh - 220px)"></div>
     </div>
   `
@@ -3380,7 +2646,7 @@ function openPlacePalette(pt, editFid = null) {
       const fontSize = Number(pl.font_size || 14) || 14
       const color = String(pl.color || "#0f172a")
       const lineH = Number(pl.line_height || 1.2) || 1.2
-      const letterS = Number(pl.letter_spacing ?? DEFAULT_LETTER_SPACING) || DEFAULT_LETTER_SPACING
+      const letterS = Number(pl.letter_spacing || 0) || 0
       const writingMode0 = String(pl.writing_mode || "horizontal")
       state.placements[fid] = { ...(state.placements?.[fid] || {}), tag, page, x, y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS }
       if (tag) state.values[tag] = String(original.val || "")
@@ -3457,7 +2723,6 @@ function openPlacePalette(pt, editFid = null) {
   if (sw) {
     const colors = [
       "#0f172a",
-      "#ffffff",
       "#141726",
       "#64748b",
       "#7c5cff",
@@ -3530,6 +2795,7 @@ function openPlacePalette(pt, editFid = null) {
         const raw = (valInput?.value || "").replaceAll("\r\n", "\n")
         const val = raw.replaceAll("\n", "<br>")
         const fontSize = Number(sizeInput?.value || "14") || 14
+        // Persist as the next default font size
         state.defaultFontSize = fontSize
         window.pywebview?.api?.update_admin_settings?.({ default_font_size: fontSize })
         const color = String(colorInput?.value || "#0f172a").trim() || "#0f172a"
@@ -3548,6 +2814,7 @@ function openPlacePalette(pt, editFid = null) {
           await window.pywebview.api.set_element_pos?.(fid, x, y)
         }
         if (tag) await window.pywebview.api.set_value?.(tag, val)
+        markDirty()
         await showPage(page)
       } catch {}
     }, 120)
@@ -3588,7 +2855,7 @@ function openPlacePalette(pt, editFid = null) {
       const lines = v ? v.split("\n") : [String(pl.tag || "")]
       const longest = Math.max(...lines.map((s) => s.length), 1)
       const lh = Number(pl.line_height || 1.2) || 1.2
-      const ls = Number(pl.letter_spacing ?? DEFAULT_LETTER_SPACING) || DEFAULT_LETTER_SPACING
+      const ls = Number(pl.letter_spacing || 0) || 0
       const wPage = Math.max(42, longest * (fs * 0.62 + ls))
       const hPage = Math.max(22, lines.length * fs * lh)
       ax = content.left + (Number(pl.x || pt.x) / state.pageW) * content.width
@@ -3602,35 +2869,15 @@ function openPlacePalette(pt, editFid = null) {
     const ch = rect().height
     const el = { left: ax, top: ay, width: aw, height: ah }
 
-    // Keep palette visible even when stage is partially outside viewport.
-    const viewport = {
-      left: pad,
-      top: pad,
-      right: Math.max(pad, window.innerWidth - pad),
-      bottom: Math.max(pad, window.innerHeight - pad),
-    }
-    const bounds = {
-      left: Math.max(stage.left + pad, viewport.left),
-      top: Math.max(stage.top + pad, viewport.top),
-      right: Math.min(stage.right - pad, viewport.right),
-      bottom: Math.min(stage.bottom - pad, viewport.bottom),
-    }
-    if (bounds.right - bounds.left < 40 || bounds.bottom - bounds.top < 40) {
-      bounds.left = viewport.left
-      bounds.top = viewport.top
-      bounds.right = viewport.right
-      bounds.bottom = viewport.bottom
-    }
-
     const fit = (l, t) =>
-      l >= bounds.left &&
-      t >= bounds.top &&
-      l + cw <= bounds.right &&
-      t + ch <= bounds.bottom
+      l >= stage.left + pad &&
+      t >= stage.top + pad &&
+      l + cw <= stage.right - pad &&
+      t + ch <= stage.bottom - pad
 
     const clamp = (l, t) => {
-      const ll = Math.min(Math.max(l, bounds.left), bounds.right - cw)
-      const tt = Math.min(Math.max(t, bounds.top), bounds.bottom - ch)
+      const ll = Math.min(Math.max(l, stage.left + pad), stage.right - pad - cw)
+      const tt = Math.min(Math.max(t, stage.top + pad), stage.bottom - pad - ch)
       return { l: ll, t: tt }
     }
 
@@ -3664,19 +2911,20 @@ function openPlacePalette(pt, editFid = null) {
 
     card.style.left = `${Math.round(pos.l)}px`
     card.style.top = `${Math.round(pos.t)}px`
+
     // Place tagCard near paletteCard within stage (same size feeling)
     if (tagCard) {
       const r1 = card.getBoundingClientRect()
       const w2 = tagCard.getBoundingClientRect().width || 520
       const h2 = tagCard.getBoundingClientRect().height || 420
       const fit = (l, t) =>
-        l >= bounds.left &&
-        t >= bounds.top &&
-        l + w2 <= bounds.right &&
-        t + h2 <= bounds.bottom
+        l >= stage.left + pad &&
+        t >= stage.top + pad &&
+        l + w2 <= stage.right - pad &&
+        t + h2 <= stage.bottom - pad
       const clamp = (l, t) => {
-        const ll = Math.min(Math.max(l, bounds.left), bounds.right - w2)
-        const tt = Math.min(Math.max(t, bounds.top), bounds.bottom - h2)
+        const ll = Math.min(Math.max(l, stage.left + pad), stage.right - pad - w2)
+        const tt = Math.min(Math.max(t, stage.top + pad), stage.bottom - pad - h2)
         return { l: ll, t: tt }
       }
       const cands = [
@@ -3712,23 +2960,11 @@ function openPlacePalette(pt, editFid = null) {
     } catch {}
   }
 
-  const normalizeText = (s) => String(s || "").replaceAll("<br>", "\n").trim().toLowerCase()
-  const getFilteredTags = (qRaw) => {
-    const q = normalizeText(qRaw)
-    const tags = state.tags || []
-    if (!q) return [...tags]
-    return tags.filter((t) => {
-      const tt = normalizeText(t)
-      const vv = normalizeText(state.values?.[t] || "")
-      return tt.includes(q) || vv.includes(q)
-    })
-  }
-
   // ---- Tag quick palette (edit values / select tag to place) ----
   const renderTagQuick = () => {
     if (!tagQuickPane) return
-    const q = String(tagSearch?.value || "")
-    const tags = getFilteredTags(q)
+    const q = String(tagSearch?.value || "").trim().toLowerCase()
+    const tags = (state.tags || []).filter((t) => (q ? String(t).toLowerCase().includes(q) : true))
     const currentTag = String(tagInput?.value || "").trim()
     tagQuickPane.innerHTML = `
       <div class="badge">タグ一覧</div>
@@ -3744,10 +2980,10 @@ function openPlacePalette(pt, editFid = null) {
       row.style.gap = "10px"
       const v = String((state.values?.[t] || "")).replaceAll("<br>", "\n")
       row.innerHTML = `
-        <button type="button" class="btn btn--soft tagNameBtn" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</button>
+        <div class="minw120" style="min-width:120px; font-weight:800; cursor:pointer">${escapeHtml(t)}</div>
         <input class="input" data-tag="${escapeHtml(t)}" placeholder="値…" value="${escapeHtml(v)}">
       `
-      const name = row.querySelector(".tagNameBtn")
+      const name = row.querySelector("div")
       const inp = row.querySelector("input")
       if (name) {
         name.onclick = () => {
@@ -3771,6 +3007,7 @@ function openPlacePalette(pt, editFid = null) {
           timer = setTimeout(async () => {
             try {
               await window.pywebview.api.set_value(t, val)
+          markDirty()
               await showPage(state.previewPageIndex || 0)
             } catch {}
           }, 120)
@@ -3786,20 +3023,16 @@ function openPlacePalette(pt, editFid = null) {
       list.appendChild(row)
     })
   }
-  if (tagSearch) {
-    tagSearch.addEventListener("input", () => renderTagQuick())
-  }
+  if (tagSearch) tagSearch.addEventListener("input", renderTagQuick)
   renderTagQuick()
 
   const save = async () => {
     const tag = (tagInput?.value || "").trim()
-    if (!tag) {
-      await uiAlert("タグを入れてください")
-      return
-    }
+    if (!tag) return alert("タグを入れてください")
     const raw = (valInput?.value || "").replaceAll("\r\n", "\n")
     const val = raw.replaceAll("\n", "<br>")
     const fontSize = Number(sizeInput?.value || "14") || 14
+    // Persist as the next default font size (so next placement reuses it)
     state.defaultFontSize = fontSize
     window.pywebview?.api?.update_admin_settings?.({ default_font_size: fontSize })
     const color = String(colorInput?.value || "#0f172a").trim() || "#0f172a"
@@ -3820,10 +3053,7 @@ function openPlacePalette(pt, editFid = null) {
             r = await window.pywebview.api.add_text_field(tag, page, pt.x, pt.y, fontSize)
           } catch {}
         }
-        if (!r.ok) {
-          await uiAlert(`追加に失敗: ${r.error || "unknown"}`)
-          return
-        }
+        if (!r.ok) return alert(`追加に失敗: ${r.error || "unknown"}`)
         fid = r.fid
         state.placements[fid] = { tag, page, x: pt.x, y: pt.y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS, writing_mode: writingMode }
         if (window.pywebview?.api?.update_placement) {
@@ -3831,10 +3061,7 @@ function openPlacePalette(pt, editFid = null) {
         }
       } else {
         // Update existing element
-        if (!fid) {
-          await uiAlert("要素IDが不明です")
-          return
-        }
+        if (!fid) return alert("要素IDが不明です")
         state.placements[fid] = { ...(state.placements[fid] || {}), tag, page, x: pt.x, y: pt.y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS, writing_mode: writingMode }
         if (window.pywebview?.api?.update_placement) {
           await window.pywebview.api.update_placement(fid, { tag, page, x: pt.x, y: pt.y, font_size: fontSize, color, line_height: lineH, letter_spacing: letterS, writing_mode: writingMode })
@@ -3854,17 +3081,18 @@ function openPlacePalette(pt, editFid = null) {
       state.selectKeys = fid ? [fid] : []
       state.idx = Math.max(0, state.tags.indexOf(tag))
       await window.pywebview.api.save_current_project(false)
+      markDirty()
       await showPage(page)
       render()
       close()
     } catch (e) {
-      await uiAlert(`配置に失敗: ${e}`)
+      alert(`配置に失敗: ${e}`)
     }
   }
   $("#pSave").onclick = save
   const del = $("#pDelete")
   if (del) del.onclick = async () => {
-    const ok = await uiConfirm(tr("dialog.deleteElement", "この要素を削除しますか？（Undoで戻せます）"))
+    const ok = confirm("この要素を削除しますか？（Undoで戻せます）")
     if (!ok) return
     const before = snapshotProject()
     const fid = String(editFid)
@@ -4015,22 +3243,16 @@ function enableOverlayPointer(on) {
 
 async function boot() {
   try {
-    await window.i18n?.ready
-    state.locale = getLocaleSafe()
-  } catch {}
-  try {
-    await ensureAdSenseScript()
-  } catch {}
-  try {
     await loadWorkers()
   } catch (e) {
     // If worker fetch fails, still show the gate (so user can retry/relaunch).
     console.error("loadWorkers failed:", e)
     state.workers = []
     state.workerId = null
-    state.gate = state.gate || { error: "" }
+    state.gate = state.gate || { step: "choose", password: "", error: "" }
     state.gate.error = "起動に失敗しました（作業者一覧の取得）。アプリを再起動してください。"
   }
+  // Load admin settings (for default font size / view zoom) in a backward-compatible way.
   try {
     const r = await window.pywebview.api.get_admin_settings?.()
     const s = r?.settings && typeof r.settings === "object" ? r.settings : {}
@@ -4040,10 +3262,16 @@ async function boot() {
     state.defaultFontSize = 14
     state.viewZoom = 1.0
   }
-  // 起動時は必ずゲート画面（PDF/プロジェクトの読み込み選択）へ
+  // 起動時は必ずゲート画面（入力者/管理者の選択）へ。
+  // 管理者はパスワード入力が必須のため、ここでは ui_mode を復元しない。
   state.appStage = "gate"
-  state.gate = state.gate || { error: "" }
-  state.uiMode = "admin"
+  const lastRole = loadLocal("inputstudio-last-role", "worker")
+  state.gate.step = "choose"
+  state.uiMode = "worker"
+  if (lastRole === "admin") {
+    // “前回は管理者”でも自動ログインはしない（ただしボタン選択の誘導はできる）
+    state.gate.step = "choose"
+  }
   render()
 }
 

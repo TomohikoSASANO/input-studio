@@ -12,21 +12,35 @@
     <script>
       // Detect web mode
       (function() {
+        const loadI18nThenApp = function() {
+          const i18nScript = document.createElement('script');
+          i18nScript.src = './i18n.js?v=1';
+          i18nScript.onload = function() {
+            const loadApp = function() {
+              const appScript = document.createElement('script');
+              appScript.src = './app.js?v=ads20260303';
+              document.body.appendChild(appScript);
+            };
+            const adConfigScript = document.createElement('script');
+            adConfigScript.src = '/ad-config.js?v=' + Date.now();
+            adConfigScript.onload = loadApp;
+            adConfigScript.onerror = loadApp;
+            document.head.appendChild(adConfigScript);
+          };
+          document.head.appendChild(i18nScript);
+        };
+
         if (!window.chrome?.webview && !window.pywebview) {
           // Web mode - load web_api.js first
           const webApiScript = document.createElement('script');
-          webApiScript.src = '/web_api.js';
+          webApiScript.src = '/web_api.js?v=' + Date.now();
           webApiScript.onload = function() {
-            const appScript = document.createElement('script');
-            appScript.src = './app.js?v=d13f54c';
-            document.body.appendChild(appScript);
+            loadI18nThenApp();
           };
           document.head.appendChild(webApiScript);
         } else {
-          // Desktop mode - load app.js directly
-          const appScript = document.createElement('script');
-          appScript.src = './app.js?v=d13f54c';
-          document.body.appendChild(appScript);
+          // Desktop mode
+          loadI18nThenApp();
         }
       })();
     </script>

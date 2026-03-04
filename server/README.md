@@ -4,15 +4,61 @@ Web版のInput Studioサーバーです。デスクトップ版と同等の機�
 
 ## セットアップ
 
-### ローカル開発環境
+### Windows環境でのセットアップ
+
+**方法1: バッチファイルを使用（推奨）**
+
+```cmd
+# セットアップスクリプトを実行
+server\setup_windows.bat
+
+# サーバーを起動
+server\start_windows.bat
+```
+
+**方法2: 手動セットアップ**
+
+```cmd
+# 仮想環境を作成
+python -m venv .venv
+
+# 仮想環境を有効化
+.venv\Scripts\activate.bat
+
+# 依存パッケージをインストール
+python -m pip install --upgrade pip
+python -m pip install -r server\requirements.txt
+
+# サーバーを起動
+python server\main.py
+```
+
+**PowerShellの場合:**
+
+```powershell
+# 仮想環境を作成
+python -m venv .venv
+
+# 仮想環境を有効化
+.venv\Scripts\Activate.ps1
+
+# 依存パッケージをインストール
+python -m pip install --upgrade pip
+python -m pip install -r server\requirements.txt
+
+# サーバーを起動
+python server\main.py
+```
+
+### Linux/Mac環境でのセットアップ
 
 ```bash
 # 仮想環境を作成
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 
 # 依存パッケージをインストール
-pip install -r requirements.txt
+pip install -r server/requirements.txt
 
 # サーバーを起動
 python server/main.py

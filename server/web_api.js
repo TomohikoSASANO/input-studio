@@ -10,6 +10,30 @@ class WebAPI {
     this.projectId = null;
   }
 
+  async _extractApiError(response, fallbackMessage) {
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch (_) {
+      payload = null;
+    }
+    if (payload && typeof payload === 'object') {
+      const code = payload.code || payload.error_code || null;
+      const detail = payload.detail;
+      if (Array.isArray(detail)) {
+        const msg = detail.map((x) => (typeof x === 'object' && x?.msg) ? x.msg : String(x)).join('; ');
+        return { code, message: msg || fallbackMessage };
+      }
+      if (typeof detail === 'string') {
+        return { code, message: detail || fallbackMessage };
+      }
+      if (detail && typeof detail === 'object') {
+        return { code: detail.code || code || null, message: detail.detail || fallbackMessage };
+      }
+    }
+    return { code: null, message: fallbackMessage };
+  }
+
   async init() {
     if (!this.sessionId) {
       const response = await fetch(`${this.baseUrl}/api/session`, {
@@ -22,16 +46,18 @@ class WebAPI {
   }
 
   async pick_pdf() {
-    // In web version, trigger file input
+    // In web version, trigger file input and return file path for compatibility.
+    // app.js will then call create_project_from_pdf_simple(r.path) - we use _pendingPdfFile.
+    const self = this;
     return new Promise((resolve) => {
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = '.pdf';
-      input.onchange = async (e) => {
+      input.onchange = async function(e) {
         const file = e.target.files[0];
         if (file) {
-          const result = await this.create_project_from_pdf_simple(file);
-          resolve(result);
+          self._pendingPdfFile = file;
+          resolve({ ok: true, path: file.name });
         } else {
           resolve({ ok: false });
         }
@@ -40,55 +66,167 @@ class WebAPI {
     });
   }
 
-  async pick_project() {
-    // In web version, trigger file input
+  async pick_project(opts) {
+    const self = this;
+    const zipOnly = opts && opts.zipOnly === true;
     return new Promise((resolve) => {
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = '.json';
-      input.onchange = async (e) => {
-        const file = e.target.files[0];
-        if (file) {
-          const text = await file.text();
+      input.accept = zipOnly ? '.zip,application/zip' : '.zip,.json,.pdf,application/zip,application/json,application/pdf';
+      input.multiple = !zipOnly;
+      input.onchange = async function(e) {
+        const files = Array.from(e.target.files || []);
+        const zipFile = files.find((f) => f.name.toLowerCase().endsWith('.zip'));
+        const jsonFile = zipOnly ? null : files.find((f) => f.name.toLowerCase().endsWith('.json'));
+        if (zipFile) {
           try {
-            const data = JSON.parse(text);
-            // For web version, we need to handle project loading differently
-            // This is a simplified version
-            resolve({ ok: true, path: file.name });
+            const initResult = await self.init();
+            if (!initResult?.session_id) {
+              resolve({ ok: false, error: 'セッションの取得に失敗しました' });
+              return;
+            }
+            const formData = new FormData();
+            formData.append('zip_file', zipFile);
+            const url = `${self.baseUrl}/api/upload-project-zip?session_id=${encodeURIComponent(self.sessionId)}`;
+            const response = await fetch(url, { method: 'POST', body: formData });
+            if (!response.ok) {
+              let apiErr = await self._extractApiError(response, 'ZIPのアップロードに失敗しました');
+              if (response.status === 405) apiErr = { code: 'METHOD_NOT_ALLOWED', message: 'サーバー接続エラー（Method Not Allowed）。サーバーを再起動してください。' };
+              resolve({ ok: false, code: apiErr.code || null, error: apiErr.message });
+              return;
+            }
+            const data = await response.json();
+            if (data.ok && data.project_id) {
+              self.projectId = data.project_id;
+              resolve({ ok: true, path: data.path });
+            } else {
+              resolve({ ok: false, error: 'Invalid response' });
+            }
           } catch (err) {
-            resolve({ ok: false, error: 'Invalid JSON' });
+            resolve({ ok: false, error: 'Failed: ' + err.message });
           }
-        } else {
-          resolve({ ok: false });
+          return;
         }
+        if (!jsonFile) {
+          resolve({ ok: false, error: zipOnly ? 'ZIPファイル（PDF同梱）を選択してください' : 'project.json または .zip ファイルを選択してください' });
+          return;
+        }
+        try {
+          await self.init();
+          const formData = new FormData();
+          formData.append('project_file', jsonFile);
+          const pdfFile = files.find((f) => f.name.toLowerCase().endsWith('.pdf'));
+          if (pdfFile) formData.append('pdf_file', pdfFile);
+          const uploadUrl = `${self.baseUrl}/api/projects/upload?session_id=${encodeURIComponent(self.sessionId)}`;
+            
+            const response = await fetch(uploadUrl, {
+              method: 'POST',
+              body: formData,
+            });
+            
+            if (!response.ok) {
+              const apiErr = await self._extractApiError(response, 'Failed to upload project');
+              resolve({ ok: false, code: apiErr.code || null, error: apiErr.message });
+              return;
+            }
+            
+            const data = await response.json();
+            if (data.ok && data.path) {
+              // Extract project_id from path
+              // Path format: C:\Users\...\projects\{project_id}\project.json
+              // or: /path/to/projects/{project_id}/project.json
+              const pathParts = data.path.split(/[/\\]/);
+              let projectDir = null;
+              for (let i = pathParts.length - 1; i >= 0; i--) {
+                if (pathParts[i] === 'projects' && i + 1 < pathParts.length) {
+                  projectDir = pathParts[i + 1];
+                  break;
+                }
+              }
+              if (!projectDir && pathParts.length >= 2) {
+                projectDir = pathParts[pathParts.length - 2];
+              }
+              if (projectDir) {
+                self.projectId = projectDir;
+              }
+              resolve({ ok: true, path: data.path });
+            } else {
+              resolve({ ok: false, error: 'Invalid response from server' });
+            }
+          } catch (err) {
+            resolve({ ok: false, error: 'Failed to upload project: ' + err.message });
+          }
       };
       input.click();
     });
   }
 
-  async create_project_from_pdf_simple(pdfFile) {
+  async create_project_from_pdf_simple(pdfPathOrFile) {
     await this.init();
+    
+    // Handle both file object and path string (for compatibility)
+    let pdfFile = pdfPathOrFile;
+    if (typeof pdfPathOrFile === 'string') {
+      // If path is provided, use pending file
+      pdfFile = this._pendingPdfFile;
+      if (!pdfFile) {
+        return { ok: false, errors: ['PDF file not found. Please select a PDF file first.'] };
+      }
+    }
+    
+    if (!pdfFile) {
+      return { ok: false, errors: ['PDF file is required'] };
+    }
     
     const formData = new FormData();
     formData.append('pdf_file', pdfFile);
-    formData.append('session_id', this.sessionId);
+    // session_id must be in URL (Query) for FastAPI
+    const url = `${this.baseUrl}/api/projects/create?session_id=${encodeURIComponent(this.sessionId)}`;
 
-    const response = await fetch(`${this.baseUrl}/api/projects/create`, {
+    const response = await fetch(url, {
       method: 'POST',
       body: formData,
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      return { ok: false, errors: [error.detail || 'Failed to create project'] };
+      let errorMsg = 'Failed to create project';
+      try {
+        const err = await response.json();
+        const d = err.detail;
+        if (Array.isArray(d)) {
+          errorMsg = d.map((x) => (typeof x === 'object' && x?.msg) ? x.msg : String(x)).join('; ');
+        } else if (typeof d === 'string') {
+          errorMsg = d;
+        }
+      } catch (_) {}
+      return { ok: false, errors: [errorMsg] };
     }
 
     const data = await response.json();
     if (data.ok && data.path) {
       // Extract project_id from path
+      // Path format: C:\Users\...\projects\{project_id}\project.json
       const pathParts = data.path.split(/[/\\]/);
-      const projectDir = pathParts[pathParts.length - 2];
-      this.projectId = projectDir;
+      let projectDir = null;
+      
+      // Find 'projects' directory and get the next part as project_id
+      for (let i = 0; i < pathParts.length; i++) {
+        if (pathParts[i] === 'projects' && i + 1 < pathParts.length) {
+          projectDir = pathParts[i + 1];
+          break;
+        }
+      }
+      
+      // Fallback: use second-to-last part if 'projects' not found
+      if (!projectDir && pathParts.length >= 2) {
+        projectDir = pathParts[pathParts.length - 2];
+      }
+      
+      if (projectDir) {
+        this.projectId = projectDir;
+      }
+      // Clear pending file
+      this._pendingPdfFile = null;
     }
     return data;
   }
@@ -97,8 +235,28 @@ class WebAPI {
     await this.init();
     
     // Extract project_id from path
+    // Path format: C:\Users\...\projects\{project_id}\project.json
+    // or: /path/to/projects/{project_id}/project.json
     const pathParts = path.split(/[/\\]/);
-    const projectDir = pathParts[pathParts.length - 2];
+    let projectDir = null;
+    
+    // Find 'projects' directory and get the next part as project_id
+    for (let i = 0; i < pathParts.length; i++) {
+      if (pathParts[i] === 'projects' && i + 1 < pathParts.length) {
+        projectDir = pathParts[i + 1];
+        break;
+      }
+    }
+    
+    // Fallback: use second-to-last part if 'projects' not found
+    if (!projectDir && pathParts.length >= 2) {
+      projectDir = pathParts[pathParts.length - 2];
+    }
+    
+    if (!projectDir) {
+      return { ok: false, error: 'Could not extract project ID from path' };
+    }
+    
     this.projectId = projectDir;
 
     const response = await fetch(
@@ -107,8 +265,8 @@ class WebAPI {
     );
 
     if (!response.ok) {
-      const error = await response.json();
-      return { ok: false, error: error.detail || 'Failed to load project' };
+      const apiErr = await this._extractApiError(response, 'Failed to load project');
+      return { ok: false, code: apiErr.code || null, error: apiErr.message };
     }
 
     return await response.json();
@@ -126,8 +284,8 @@ class WebAPI {
     );
 
     if (!response.ok) {
-      const error = await response.json();
-      return { ok: false, error: error.detail || 'Failed to get preview' };
+      const apiErr = await this._extractApiError(response, 'Failed to get preview');
+      return { ok: false, code: apiErr.code || null, error: apiErr.message };
     }
 
     return await response.json();
@@ -159,11 +317,57 @@ class WebAPI {
     );
 
     if (!response.ok) {
-      const error = await response.json();
-      return { ok: false, error: error.detail || 'Failed to save project' };
+      const apiErr = await this._extractApiError(response, 'Failed to save project');
+      return { ok: false, code: apiErr.code || null, error: apiErr.message };
     }
 
     return await response.json();
+  }
+
+  async download_filled_pdf(filename) {
+    await this.init();
+    
+    if (!this.projectId) {
+      return { ok: false, error: 'no_project' };
+    }
+
+    const response = await fetch(
+      `${this.baseUrl}/api/projects/${this.projectId}/export?session_id=${this.sessionId}`
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      return { ok: false, error: error.detail || 'Failed to export PDF' };
+    }
+
+    const blob = await response.blob();
+    const suggestedName = (filename || `${this.projectId}_filled`).replace(/\.pdf$/i, '') + '.pdf';
+
+    if (typeof window.showSaveFilePicker === 'function') {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName,
+          types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return { ok: true };
+      } catch (e) {
+        if (e.name === 'AbortError') return { ok: false, error: 'cancelled' };
+        throw e;
+      }
+    }
+
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = suggestedName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    return { ok: true };
   }
 
   async set_value(tag, value) {
@@ -472,10 +676,150 @@ class WebAPI {
   }
 
   async append_pdf_to_project(pdfPath) {
-    // This endpoint needs to be added to the server
     await this.init();
-    
-    return { ok: false, error: 'not_implemented' };
+    if (!this.projectId) {
+      return { ok: false, error: 'no_project' };
+    }
+    const pdfFile = this._pendingPdfFile;
+    if (!pdfFile) {
+      return { ok: false, error: 'PDF file not found. Please select a PDF file first.' };
+    }
+    const formData = new FormData();
+    formData.append('pdf_file', pdfFile);
+    const response = await fetch(
+      `${this.baseUrl}/api/projects/${this.projectId}/append-pdf?session_id=${encodeURIComponent(this.sessionId)}`,
+      { method: 'POST', body: formData }
+    );
+    if (!response.ok) {
+      const apiErr = await this._extractApiError(response, 'Failed to append PDF');
+      return { ok: false, code: apiErr.code || null, error: apiErr.message };
+    }
+    this._pendingPdfFile = null;
+    return await response.json();
+  }
+
+  async copy_page_with_elements(pageIndex) {
+    await this.init();
+    if (!this.projectId) {
+      return { ok: false, error: 'no_project' };
+    }
+    const response = await fetch(
+      `${this.baseUrl}/api/projects/${this.projectId}/copy-page?session_id=${encodeURIComponent(this.sessionId)}&page_index=${pageIndex}`,
+      { method: 'POST' }
+    );
+    if (!response.ok) {
+      const apiErr = await this._extractApiError(response, 'Failed to copy page');
+      return { ok: false, code: apiErr.code || null, error: apiErr.message };
+    }
+    return await response.json();
+  }
+
+  async delete_page_from_project(pageIndex) {
+    await this.init();
+    if (!this.projectId) {
+      return { ok: false, error: 'no_project' };
+    }
+    const response = await fetch(
+      `${this.baseUrl}/api/projects/${this.projectId}/delete-page?session_id=${encodeURIComponent(this.sessionId)}&page_index=${pageIndex}`,
+      { method: 'POST' }
+    );
+    if (!response.ok) {
+      const apiErr = await this._extractApiError(response, 'Failed to delete page');
+      return { ok: false, code: apiErr.code || null, error: apiErr.message };
+    }
+    return await response.json();
+  }
+
+  async reorder_pages(order) {
+    await this.init();
+    if (!this.projectId) {
+      return { ok: false, error: 'no_project' };
+    }
+    const response = await fetch(
+      `${this.baseUrl}/api/projects/${this.projectId}/reorder-pages?session_id=${encodeURIComponent(this.sessionId)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order }),
+      }
+    );
+    if (!response.ok) {
+      const apiErr = await this._extractApiError(response, 'Failed to reorder pages');
+      return { ok: false, code: apiErr.code || null, error: apiErr.message };
+    }
+    return await response.json();
+  }
+
+  async get_project_json() {
+    await this.init();
+    if (!this.projectId) {
+      return { ok: false, error: 'no_project' };
+    }
+    const response = await fetch(
+      `${this.baseUrl}/api/projects/${this.projectId}/export-json?session_id=${encodeURIComponent(this.sessionId)}`
+    );
+    if (!response.ok) {
+      const apiErr = await this._extractApiError(response, 'Failed to export project');
+      return { ok: false, code: apiErr.code || null, error: apiErr.message };
+    }
+    return await response.json();
+  }
+
+  async save_project_to_picker(suggestedName) {
+    await this.init();
+    if (!this.projectId) {
+      return { ok: false, error: 'no_project' };
+    }
+    const base = (suggestedName || 'project').replace(/[\\/:*?"<>|]/g, '_').replace(/\.(json|zip)$/i, '');
+    const baseName = base + '.zip';
+    let handle = null;
+    if (typeof window.showSaveFilePicker === 'function') {
+      try {
+        handle = await window.showSaveFilePicker({
+          suggestedName: baseName,
+          types: [{ description: 'ZIP（PDF同梱）', accept: { 'application/zip': ['.zip'] } }],
+        });
+      } catch (e) {
+        if (e.name === 'AbortError') return { ok: false, error: 'cancelled' };
+        throw e;
+      }
+    }
+    const response = await fetch(
+      `${this.baseUrl}/api/projects/${this.projectId}/export-zip?session_id=${encodeURIComponent(this.sessionId)}`
+    );
+    if (!response.ok) {
+      let errMsg = 'Failed to export project';
+      try {
+        const err = await response.json();
+        const d = err.detail;
+        if (Array.isArray(d)) errMsg = d.map(x => (typeof x === 'object' && x?.msg) ? x.msg : String(x)).join('; ');
+        else if (typeof d === 'string') errMsg = d;
+      } catch (_) {}
+      return { ok: false, error: errMsg };
+    }
+    const blob = await response.blob();
+    if (blob.size < 100) {
+      return { ok: false, error: 'ZIPの取得に失敗しました。空のファイルが返されました。' };
+    }
+    if (handle) {
+      try {
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return { ok: true };
+      } catch (e) {
+        throw e;
+      }
+    }
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = baseName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    return { ok: true };
   }
 }
 
@@ -485,11 +829,24 @@ if (typeof window !== 'undefined') {
   const isWebMode = !window.chrome?.webview && !window.pywebview;
   
   if (isWebMode) {
+    window.__INPUTSTUDIO_WEB__ = true;  // For app.js to hide desktop-only UI
     const webApi = new WebAPI();
     
-    // Create window.pywebview.api for compatibility
+    // Bind all methods so they work when called as: const fn = api.pick_pdf; fn()
+    const boundApi = {};
+    for (const key of Object.getOwnPropertyNames(Object.getPrototypeOf(webApi))) {
+      if (key !== 'constructor' && typeof webApi[key] === 'function') {
+        boundApi[key] = webApi[key].bind(webApi);
+      }
+    }
+    
     window.pywebview = {
-      api: webApi,
+      api: boundApi,
     };
+    
+    // Defensive: verify api has required methods
+    if (!window.pywebview.api || typeof window.pywebview.api.create_project_from_pdf_simple !== 'function') {
+      console.error('WebAPI initialization failed: create_project_from_pdf_simple is missing');
+    }
   }
 }
