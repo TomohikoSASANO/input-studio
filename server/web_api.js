@@ -183,23 +183,22 @@ class WebAPI {
     // session_id must be in URL (Query) for FastAPI
     const url = `${this.baseUrl}/api/projects/create?session_id=${encodeURIComponent(this.sessionId)}`;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      body: formData,
-    });
+    const response = await fetch(url, { method: 'POST', body: formData });
 
     if (!response.ok) {
-      let errorMsg = 'Failed to create project';
-      try {
-        const err = await response.json();
-        const d = err.detail;
-        if (Array.isArray(d)) {
-          errorMsg = d.map((x) => (typeof x === 'object' && x?.msg) ? x.msg : String(x)).join('; ');
-        } else if (typeof d === 'string') {
-          errorMsg = d;
-        }
-      } catch (_) {}
-      return { ok: false, errors: [errorMsg] };
+      let apiErr = await this._extractApiError(response, 'PDFの読み込みに失敗しました');
+      if (response.status === 413) {
+        apiErr = {
+          code: 'UPLOAD_TOO_LARGE',
+          message: 'PDFサイズが上限を超えています。サーバー管理者に「Nginx client_max_body_size」と「INPUTSTUDIO_MAX_UPLOAD_MB」を増やすよう依頼してください。',
+        };
+      } else if (response.status === 405) {
+        apiErr = {
+          code: 'METHOD_NOT_ALLOWED',
+          message: 'サーバー接続エラー（Method Not Allowed）。サーバーを再起動してください。',
+        };
+      }
+      return { ok: false, code: apiErr.code || null, errors: [apiErr.message] };
     }
 
     const data = await response.json();
@@ -686,12 +685,16 @@ class WebAPI {
     }
     const formData = new FormData();
     formData.append('pdf_file', pdfFile);
-    const response = await fetch(
-      `${this.baseUrl}/api/projects/${this.projectId}/append-pdf?session_id=${encodeURIComponent(this.sessionId)}`,
-      { method: 'POST', body: formData }
-    );
+    const appendUrl = `${this.baseUrl}/api/projects/${this.projectId}/append-pdf?session_id=${encodeURIComponent(this.sessionId)}`;
+    const response = await fetch(appendUrl, { method: 'POST', body: formData });
     if (!response.ok) {
-      const apiErr = await this._extractApiError(response, 'Failed to append PDF');
+      let apiErr = await this._extractApiError(response, 'PDF追加に失敗しました');
+      if (response.status === 413) {
+        apiErr = {
+          code: 'UPLOAD_TOO_LARGE',
+          message: 'PDFサイズが上限を超えています。サーバー管理者に「Nginx client_max_body_size」と「INPUTSTUDIO_MAX_UPLOAD_MB」を増やすよう依頼してください。',
+        };
+      }
       return { ok: false, code: apiErr.code || null, error: apiErr.message };
     }
     this._pendingPdfFile = null;

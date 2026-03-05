@@ -48,7 +48,7 @@ _sessions: dict[str, Api] = {}
 _RATE_LIMIT_WINDOW_SEC = int(os.environ.get("INPUTSTUDIO_RATE_WINDOW_SEC", "60"))
 # Default relaxed for single-tenant VPS operation
 _RATE_LIMIT_REQUESTS = int(os.environ.get("INPUTSTUDIO_RATE_REQUESTS", "600"))
-_MAX_UPLOAD_BYTES = int(os.environ.get("INPUTSTUDIO_MAX_UPLOAD_MB", "80")) * 1024 * 1024
+_MAX_UPLOAD_BYTES = int(os.environ.get("INPUTSTUDIO_MAX_UPLOAD_MB", "200")) * 1024 * 1024
 _HEAVY_CONCURRENCY = max(1, int(os.environ.get("INPUTSTUDIO_MAX_HEAVY_CONCURRENCY", "6")))
 _HEAVY_WAIT_TIMEOUT_SEC = float(os.environ.get("INPUTSTUDIO_HEAVY_WAIT_TIMEOUT_SEC", "15.0"))
 
