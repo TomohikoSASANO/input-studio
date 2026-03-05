@@ -592,6 +592,20 @@ select:focus,.input:focus,.textarea:focus{box-shadow:0 0 0 5px rgba(124,92,255,.
   box-shadow: 0 0 0 5px rgba(124,92,255,.14), 0 10px 24px rgba(17,24,39,.10);
 }
 .btn:disabled{opacity:.45; cursor:not-allowed; box-shadow:none}
+.adHintBubble{
+  display:inline-block;
+  margin-left:6px;
+  padding:2px 8px;
+  border-radius:999px;
+  font-size:10px;
+  font-weight:700;
+  color:#7a2f90;
+  background: linear-gradient(135deg, rgba(255,255,255,.96), rgba(255,227,247,.9));
+  border:1px solid rgba(213,117,191,.45);
+  box-shadow: 0 4px 10px rgba(213,117,191,.2);
+  vertical-align:middle;
+  white-space:nowrap;
+}
 
 /* タグ一覧のタグ名ボタン（クリックで選択・コピー） */
 .tagNameBtn{

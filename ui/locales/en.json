@@ -47,6 +47,7 @@
   "ad.unlock.ready": "You can continue now",
   "ad.unlock.cancel": "Cancel",
   "ad.unlock.continue": "Watch and continue",
+  "ad.unlock.badge": "Watch ad to unlock",
   "top.value.title": "What this site offers",
   "top.value.audience": "For: people filling applications and forms",
   "top.value.benefit1": "Value 1: Update repeated fields with tag sync",

@@ -591,6 +591,12 @@ function applyPreviewTransform() {
   if (zi) zi.textContent = `${Math.round(z * 100)}%`
 }
 
+function resetPreviewViewport({ zoom = 1.0 } = {}) {
+  state.viewZoom = clampNum(zoom, 0.5, 3.0)
+  state.viewPanX = 0
+  state.viewPanY = 0
+}
+
 async function setViewZoom(nextZoom, { persist = true } = {}) {
   state.viewZoom = clampNum(nextZoom, 0.5, 3.0)
   applyPreviewTransform()
@@ -801,6 +807,12 @@ function recordUnlockAdShown(action) {
   state.adLastShown[action] = now
   state.adSessionCounts[action] = Number(state.adSessionCounts[action] || 0) + 1
   saveLocal("inputstudio-ad-last-shown", state.adLastShown)
+}
+
+function unlockHintBubble(action) {
+  if (!isWeb()) return ""
+  if (!AD_UNLOCK_RULES[action]) return ""
+  return ` <span class="adHintBubble">${escapeHtml(tr("ad.unlock.badge", "広告を見て解放"))}</span>`
 }
 
 async function showUnlockAd(action) {
@@ -1086,7 +1098,7 @@ function renderGate() {
 
         <div class="gateActions">
           <button class="btn btn--primary" id="gateLoadPdf">${escapeHtml(tr("gate.loadPdf", "PDFを読み込む"))}</button>
-          <button class="btn btn--soft" id="gateLoadProject">${escapeHtml(tr("gate.loadZip", "プロジェクトZIPを開く"))}</button>
+          <button class="btn btn--soft" id="gateLoadProject">${escapeHtml(tr("gate.loadZip", "プロジェクトZIPを開く"))}${unlockHintBubble("zip_open")}</button>
         </div>
         <div class="label gateHint">${escapeHtml(tr("gate.hint", "PDFから新規作成　／　既存の案件（ZIP・PDF同梱）を開く"))}</div>
         <div class="gateGuide">
@@ -1174,6 +1186,7 @@ function renderGate() {
       state.timerStart = null
       state.privateTotal = 0
       state.appStage = "main"
+      resetPreviewViewport({ zoom: 1.0 })
       const started = await autoStartWorkIfPossible()
       toast(started ? "新規案件を作成し、作業タイマーを開始しました" : "PDFから新規プロジェクトを作成しました。必要に応じてタグを配置してください。")
       render()
@@ -1222,6 +1235,7 @@ function renderGate() {
       state.timerStart = null
       state.privateTotal = 0
       state.appStage = "main"
+      resetPreviewViewport({ zoom: 1.0 })
       const started = await autoStartWorkIfPossible()
       toast(started ? tr("gate.toastLoadedZipAndTimer", "ZIPを読み込み、作業タイマーを開始しました") : tr("gate.toastLoadedZip", "ZIPを読み込みました"))
       render()
@@ -1321,10 +1335,10 @@ function render() {
       ${window.__INPUTSTUDIO_DEMO__ ? `<input type="file" id="demoPdfFile" accept=".pdf,application/pdf" style="display:none" />` : ""}
 
       <div class="miniActions">
-        <button class="chip chip--soft" id="btnOpen">${escapeHtml(tr("main.openZip", "プロジェクトZIPを開く"))}</button>
+        <button class="chip chip--soft" id="btnOpen">${escapeHtml(tr("main.openZip", "プロジェクトZIPを開く"))}${unlockHintBubble("zip_open")}</button>
         ${isAdmin ? `<button class="chip chip--soft" id="btnOpenPdf">${escapeHtml(tr("main.newFromPdf", "PDFから新規"))}</button>` : ""}
         ${isAdmin ? `        <button class="chip" id="btnDesign">設計（統括）</button>` : ""}
-        <button class="chip chip--soft" id="btnAppendPdf" ${state.projectPath ? "" : "disabled"}>${escapeHtml(tr("main.appendPdf", "PDF追加"))}</button>
+        <button class="chip chip--soft" id="btnAppendPdf" ${state.projectPath ? "" : "disabled"}>${escapeHtml(tr("main.appendPdf", "PDF追加"))}${unlockHintBubble("pdf_append")}</button>
         <button class="chip chip--soft" id="btnReorderPdf" ${state.projectPath ? "" : "disabled"}>${escapeHtml(tr("main.reorderPdf", "PDF並べ替え"))}</button>
         <button class="chip chip--soft" id="btnCopyPageOp" ${state.projectPath ? "" : "disabled"}>${escapeHtml(tr("main.copyCurrentPage", "現在ページ複製"))}</button>
         <button class="chip chip--soft" id="btnDeletePageOp" ${state.projectPath ? "" : "disabled"}>${escapeHtml(tr("main.deleteCurrentPage", "現在ページ削除"))}</button>
@@ -1883,6 +1897,7 @@ function bind() {
       const a = await api.append_pdf_to_project(r.path)
       if (!a?.ok) return toast(`PDF追加に失敗: ${apiErrorMessage(a, "unknown")}`)
       state.pageCount = a.page_count || state.pageCount
+      resetPreviewViewport({ zoom: 1.0 })
       render()
       await showPage(curr)
       toast(tr("main.toast.appendDone", `PDFを追加しました（合計 ${state.pageCount} ページ）`, { pages: state.pageCount }))
