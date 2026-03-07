@@ -2477,15 +2477,6 @@ function bind() {
       if (!state.projectPath) return
       if (state.designMode) return
       if (ev.button === 1 || ev.altKey) {
-        const effectiveZoom = clampNum((Number(state.viewZoom || 1) || 1) * (Number(state.viewBaseZoom || 1) || 1), 0.4, 3.0)
-        if (effectiveZoom <= 1.001) {
-          state.viewPanX = 0
-          state.viewPanY = 0
-          applyPreviewTransform()
-          drawOverlay()
-          ev.preventDefault()
-          return
-        }
         panning = true
         panStartX = ev.clientX
         panStartY = ev.clientY
@@ -2535,10 +2526,6 @@ function bind() {
 
     ov.onpointermove = (ev) => {
       if (panning) {
-        if (!(ev.buttons & 4) && !ev.altKey) {
-          panning = false
-          return
-        }
         const dx = ev.clientX - panStartX
         const dy = ev.clientY - panStartY
         state.viewPanX = panBaseX + dx
