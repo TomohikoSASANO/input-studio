@@ -209,7 +209,7 @@ async function refreshAdSlots() {
   </defs>
   <rect x="0" y="0" width="${w}" height="${h}" fill="url(#bg)"/>
   <rect x="40" y="40" width="${w - 80}" height="${h - 80}" fill="#ffffff" stroke="rgba(15,23,42,0.10)" stroke-width="2" rx="18"/>
-  <text x="72" y="110" font-size="28" fill="rgba(15,23,42,0.75)" font-family="Arial, sans-serif">Input Studio デモプレビュー</text>
+  <text x="72" y="110" font-size="28" fill="rgba(15,23,42,0.75)" font-family="Arial, sans-serif">PDF Input Studio デモプレビュー</text>
   <text x="72" y="150" font-size="18" fill="rgba(15,23,42,0.55)" font-family="Arial, sans-serif">ページ ${p} / ${n}</text>
   <g opacity="0.18">
     <rect x="90" y="220" width="${w - 180}" height="${h - 320}" fill="none" stroke="#7c5cff" stroke-width="2" stroke-dasharray="10 10" rx="10"/>
@@ -523,6 +523,7 @@ const state = {
   lastExportDir: null,
   defaultFontSize: 14,
   viewZoom: 1.0,
+  viewBaseZoom: 1.0,
   viewPanX: 0,
   viewPanY: 0,
   locale: getLocaleSafe(),
@@ -583,18 +584,45 @@ function clampNum(v, minV, maxV) {
 function applyPreviewTransform() {
   const sc = $("#previewScale")
   if (!sc) return
-  const z = clampNum(state.viewZoom || 1, 0.5, 3.0)
+  const userZoom = clampNum(state.viewZoom || 1, 0.5, 3.0)
+  const baseZoom = clampNum(state.viewBaseZoom || 1, 0.6, 1.0)
+  const z = clampNum(userZoom * baseZoom, 0.4, 3.0)
+  // Keep the page fully fitted at 100%: avoid residual pan clipping.
+  if (userZoom <= 1.001) {
+    state.viewPanX = 0
+    state.viewPanY = 0
+  }
   const tx = Number(state.viewPanX || 0) || 0
   const ty = Number(state.viewPanY || 0) || 0
   sc.style.transform = `translate(${tx}px, ${ty}px) scale(${z})`
   const zi = $("#zoomIndicator")
-  if (zi) zi.textContent = `${Math.round(z * 100)}%`
+  if (zi) zi.textContent = `${Math.round(userZoom * 100)}%`
 }
 
 function resetPreviewViewport({ zoom = 1.0 } = {}) {
   state.viewZoom = clampNum(zoom, 0.5, 3.0)
+  state.viewBaseZoom = 1.0
   state.viewPanX = 0
   state.viewPanY = 0
+}
+
+function updatePreviewBaseZoom() {
+  const host = $(".previewImg")
+  const img = $("#previewImg")
+  if (!host || !img || !img.naturalWidth || !img.naturalHeight) {
+    state.viewBaseZoom = 1.0
+    return
+  }
+  const hostW = Math.max(1, host.clientWidth)
+  const hostH = Math.max(1, host.clientHeight)
+  const iw = Math.max(1, Number(img.naturalWidth || 1))
+  const ih = Math.max(1, Number(img.naturalHeight || 1))
+  // Reserve a small top safe area so the preview HUD does not visually overlap content.
+  const safeTop = 54
+  const targetFit = Math.min(hostW / iw, Math.max(1, hostH - safeTop) / ih)
+  const plainFit = Math.min(hostW / iw, hostH / ih)
+  const ratio = plainFit > 0 ? targetFit / plainFit : 1
+  state.viewBaseZoom = clampNum(ratio, 0.75, 1.0)
 }
 
 async function setViewZoom(nextZoom, { persist = true } = {}) {
@@ -904,6 +932,7 @@ function tipIcon(n, text) {
 
 // Tooltip that never goes off-screen (replaces CSS-only tooltip).
 let _tipFloatBound = false
+let _previewFitBound = false
 function bindTipFloatOnce() {
   if (_tipFloatBound) return
   _tipFloatBound = true
@@ -987,6 +1016,17 @@ function bindTipFloatOnce() {
   })
 }
 
+function bindPreviewFitOnce() {
+  if (_previewFitBound) return
+  _previewFitBound = true
+  window.addEventListener("resize", () => {
+    if (!state.projectPath) return
+    updatePreviewBaseZoom()
+    applyPreviewTransform()
+    drawOverlay()
+  })
+}
+
 async function showPage(pageIndex) {
   if (!state.projectPath) return
   const api = window.pywebview?.api
@@ -1009,7 +1049,12 @@ async function showPage(pageIndex) {
   if (r && r.ok) {
     const img = $("#previewImg")
     if (img) {
-      img.onload = () => (img.style.visibility = "visible")
+      img.onload = () => {
+        img.style.visibility = "visible"
+        updatePreviewBaseZoom()
+        applyPreviewTransform()
+        drawOverlay()
+      }
       img.onerror = () => {
         img.style.visibility = "hidden"
         toast("プレビュー画像の読み込みに失敗しました（パス/権限/文字コードの可能性）")
@@ -1024,6 +1069,7 @@ async function showPage(pageIndex) {
     } else {
       state.pageW = r.page_display_width || state.pageW
       state.pageH = r.page_display_height || state.pageH
+      updatePreviewBaseZoom()
     }
     drawOverlay()
     const p = $("#pageIndicator")
@@ -1084,7 +1130,7 @@ function renderGate() {
         <div class="gateBrand">
           <div class="logo gateLogo" aria-hidden="true"></div>
           <div class="gateTitle">
-            <div class="gateTitle__top">Input Studio</div>
+            <div class="gateTitle__top">PDF Input Studio</div>
             <div class="gateTitle__sub">${escapeHtml(tr("brand.tagline", "PDFに文字を置いて、完成PDFを作る"))}</div>
           </div>
         </div>
@@ -1101,6 +1147,13 @@ function renderGate() {
           <button class="btn btn--soft" id="gateLoadProject">${escapeHtml(tr("gate.loadZip", "プロジェクトZIPを開く"))}${unlockHintBubble("zip_open")}</button>
         </div>
         <div class="label gateHint">${escapeHtml(tr("gate.hint", "PDFから新規作成　／　既存の案件（ZIP・PDF同梱）を開く"))}</div>
+        <div class="gateTrustNav" aria-label="site trust navigation">
+          <a class="gateTrustNav__link" href="/about.html">${escapeHtml(tr("top.nav.about", "企業情報"))}</a>
+          <a class="gateTrustNav__link" href="/contact.html">${escapeHtml(tr("top.nav.contact", "お問い合わせ"))}</a>
+          <a class="gateTrustNav__link" href="/privacy.html">${escapeHtml(tr("top.nav.privacy", "プライバシーポリシー"))}</a>
+          <a class="gateTrustNav__link" href="/terms.html">${escapeHtml(tr("top.nav.terms", "利用規約"))}</a>
+          <a class="gateTrustNav__link" href="/faq.html">${escapeHtml(tr("top.nav.faq", "FAQ"))}</a>
+        </div>
         <div class="gateGuide">
           <div class="gateGuide__title">${escapeHtml(tr("top.value.title", "このサイトでできること"))}</div>
           <div class="gateGuide__item">${escapeHtml(tr("top.value.audience", "対象: 申請書・帳票の入力担当者"))}</div>
@@ -1328,7 +1381,7 @@ function render() {
       <div class="brand row spread" style="align-items:center">
         <div class="row" style="align-items:center; gap:12px">
           <div class="logo" aria-hidden="true"></div>
-          <div class="brand__name">Input Studio</div>
+          <div class="brand__name">PDF Input Studio</div>
         </div>
         <button class="chip chip--soft" id="btnBackToGate">${escapeHtml(tr("main.backToTop", "トップページに戻る"))}</button>
       </div>
@@ -1468,6 +1521,7 @@ function render() {
 function bind() {
   // Tooltips that never go off-screen
   bindTipFloatOnce()
+  bindPreviewFitOnce()
   applyPreviewTransform()
 
   // Global hotkeys (selection / undo / copy-paste)

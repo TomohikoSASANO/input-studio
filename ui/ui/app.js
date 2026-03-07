@@ -56,7 +56,7 @@ const $ = (sel) => document.querySelector(sel)
   </defs>
   <rect x="0" y="0" width="${w}" height="${h}" fill="url(#bg)"/>
   <rect x="40" y="40" width="${w - 80}" height="${h - 80}" fill="#ffffff" stroke="rgba(15,23,42,0.10)" stroke-width="2" rx="18"/>
-  <text x="72" y="110" font-size="28" fill="rgba(15,23,42,0.75)" font-family="Arial, sans-serif">Input Studio デモプレビュー</text>
+  <text x="72" y="110" font-size="28" fill="rgba(15,23,42,0.75)" font-family="Arial, sans-serif">PDF Input Studio デモプレビュー</text>
   <text x="72" y="150" font-size="18" fill="rgba(15,23,42,0.55)" font-family="Arial, sans-serif">ページ ${p} / ${n}</text>
   <g opacity="0.18">
     <rect x="90" y="220" width="${w - 180}" height="${h - 320}" fill="none" stroke="#7c5cff" stroke-width="2" stroke-dasharray="10 10" rx="10"/>
@@ -664,7 +664,7 @@ function renderGate() {
         <div class="gateBrand">
           <div class="logo gateLogo" aria-hidden="true"></div>
           <div class="gateTitle">
-            <div class="gateTitle__top">Input Studio</div>
+            <div class="gateTitle__top">PDF Input Studio</div>
             <div class="gateTitle__sub">PDFに文字を置いて、完成PDFを作る</div>
           </div>
         </div>
@@ -821,7 +821,7 @@ function render() {
       <div class="brand">
         <div class="logo" aria-hidden="true"></div>
         <div>
-          <div class="brand__name">Input Studio</div>
+          <div class="brand__name">PDF Input Studio</div>
         </div>
       </div>
 
