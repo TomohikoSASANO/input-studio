@@ -806,6 +806,10 @@ select:focus,.input:focus,.textarea:focus{box-shadow:0 0 0 5px rgba(124,92,255,.
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
 }
+.emptyHint--palette{
+  border-color: rgba(124,92,255,.30);
+  background: rgba(245,240,255,.86);
+}
 .emptyHint__title{font-weight:900; font-size:14px}
 .emptyHint__text{margin-top:4px; font-size:12px; color:var(--muted); line-height:1.4}
 .emptyHint__actions{margin-top:10px; display:flex; gap:10px; flex-wrap:wrap}

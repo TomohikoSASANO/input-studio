@@ -553,6 +553,8 @@ const state = {
   locale: getLocaleSafe(),
   adLastShown: {},
   adSessionCounts: {},
+  showPreviewHint: true,
+  placePaletteOpen: false,
 }
 
 state.history = loadLocal("inputstudio-history", [])
@@ -560,6 +562,7 @@ state.lastSession = loadLocal("inputstudio-last-session", null)
 state.lastProjectDir = loadLocal("inputstudio-last-dir", null)
 state.showPanel = loadLocal("inputstudio-show-panel", true)
 state.adLastShown = loadLocal("inputstudio-ad-last-shown", {})
+state.showPreviewHint = loadLocal("inputstudio-show-preview-hint", true)
 
 function loadLocal(key, fallback) {
   try {
@@ -650,6 +653,46 @@ function normalizeViewportAtFit() {
   if (z <= 1.001) {
     state.viewPanX = 0
     state.viewPanY = 0
+  }
+}
+
+function updatePreviewGuideHint() {
+  const hint = $("#previewGuideHint")
+  if (!hint) return
+  if (!state.projectPath || !state.showPreviewHint) {
+    hint.style.display = "none"
+    return
+  }
+  const paletteMode = !!state.placePaletteOpen
+  const title = paletteMode
+    ? "タグ名と値を入力して配置しよう"
+    : "まずはPDFに欄（タグ）を置きましょう"
+  const text = paletteMode
+    ? "タグ名と値を入力して配置しよう。タグ一覧のタグをクリックすると既存タグを呼び出せます。同じタグはまとめて値を編集できます。"
+    : "PDF上をダブルクリックしてタグ名と値を入力し、欄を配置できます。"
+  hint.className = `emptyHint ${paletteMode ? "emptyHint--palette" : ""}`.trim()
+  hint.innerHTML = `
+    <div class="emptyHint__title">${escapeHtml(title)}</div>
+    <div class="emptyHint__text">${escapeHtml(text)}</div>
+    <div class="emptyHint__actions">
+      ${paletteMode ? "" : `<button class="btn btn--primary" id="btnAddFromCenter">中央に欄を追加</button>`}
+      <button class="btn btn--soft" id="btnHideHints">この案内を隠す</button>
+    </div>
+  `
+  hint.style.display = "block"
+
+  const btnAddFromCenter = $("#btnAddFromCenter")
+  if (btnAddFromCenter) btnAddFromCenter.onclick = () => {
+    const x = Math.round(0.5 * state.pageW)
+    const y = Math.round(0.5 * state.pageH)
+    if (!x || !y) return
+    openPlacePalette({ x, y })
+  }
+  const btnHideHints = $("#btnHideHints")
+  if (btnHideHints) btnHideHints.onclick = () => {
+    state.showPreviewHint = false
+    saveLocal("inputstudio-show-preview-hint", false)
+    updatePreviewGuideHint()
   }
 }
 
@@ -1507,18 +1550,7 @@ function render() {
             </div>
             <canvas id="confetti" class="confetti" aria-hidden="true"></canvas>
             <canvas id="overlay" class="overlay"></canvas>
-            ${
-              !hasTags
-                ? `<div class="emptyHint">
-                    <div class="emptyHint__title">まずはPDFに欄（タグ）を置きましょう</div>
-                    <div class="emptyHint__text">PDF上をダブルクリック → タグ/値/サイズを入力して配置できます。</div>
-                    <div class="emptyHint__actions">
-                      <button class="btn btn--primary" id="btnAddFromCenter">中央に欄を追加</button>
-                      <button class="btn btn--soft" id="btnHideHints">この案内を隠す</button>
-                    </div>
-                  </div>`
-                : ""
-            }
+            <div class="emptyHint" id="previewGuideHint" style="display:none"></div>
           </div>`
         : `<div class="previewPlaceholder">プロジェクトZIPを開くとPDFがここに表示されます</div>`
     }
@@ -1555,6 +1587,7 @@ function bind() {
   bindTipFloatOnce()
   bindPreviewFitOnce()
   applyPreviewTransform()
+  updatePreviewGuideHint()
 
   // Global hotkeys (selection / undo / copy-paste)
   document.onkeydown = async (ev) => {
@@ -2104,22 +2137,6 @@ function bind() {
       state.viewPanY = 0
       setViewZoom(1.0)
     }
-
-  const btnAddFromCenter = $("#btnAddFromCenter")
-  if (btnAddFromCenter) btnAddFromCenter.onclick = () => {
-    const img = $("#previewImg")
-    if (!img || !img.src) return
-    const x = Math.round(0.5 * state.pageW)
-    const y = Math.round(0.5 * state.pageH)
-    if (!x || !y) return
-    openPlacePalette({ x, y })
-  }
-
-  const btnHideHints = $("#btnHideHints")
-  if (btnHideHints) btnHideHints.onclick = () => {
-    const h = document.querySelector(".emptyHint")
-    if (h) h.remove()
-  }
 
   const btnAdmin = $("#btnAdmin")
   if (btnAdmin) btnAdmin.onclick = async () => {
@@ -3392,6 +3409,8 @@ function openPlacePalette(pt, editFid = null) {
   const close = () => {
     modal.style.display = "none"
     modal.innerHTML = ""
+    state.placePaletteOpen = false
+    updatePreviewGuideHint()
   }
   const pageIdx = Number.isFinite(state.previewPageIndex) ? state.previewPageIndex : 0
   const isEdit = !!editFid
@@ -3402,6 +3421,8 @@ function openPlacePalette(pt, editFid = null) {
   const curLS = Number(currentPl.letter_spacing ?? DEFAULT_LETTER_SPACING) || DEFAULT_LETTER_SPACING
   let writingMode = String(currentPl.writing_mode || "horizontal")
   const tagsOptions = state.tags.map((t) => `<option value="${escapeHtml(t)}"></option>`).join("")
+  state.placePaletteOpen = true
+  updatePreviewGuideHint()
   modal.style.display = "block"
   modal.innerHTML = `
     <div class="modal__backdrop" id="modalClose"></div>
