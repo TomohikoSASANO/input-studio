@@ -806,6 +806,12 @@ select:focus,.input:focus,.textarea:focus{box-shadow:0 0 0 5px rgba(124,92,255,.
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
 }
+.mainGuidePopup{
+  /* Keep guidance away from taskbar-clipped area. */
+  top:68px;
+  bottom:auto;
+  z-index:8;
+}
 .emptyHint--palette{
   border-color: rgba(124,92,255,.30);
   background: rgba(245,240,255,.86);

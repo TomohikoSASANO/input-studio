@@ -1121,7 +1121,6 @@ async function showPage(pageIndex) {
         normalizeViewportAtFit()
         applyPreviewTransform()
         drawOverlay()
-        updatePreviewGuideHint()
       }
       img.onerror = () => {
         img.style.visibility = "hidden"
@@ -1141,7 +1140,6 @@ async function showPage(pageIndex) {
       normalizeViewportAtFit()
     }
     drawOverlay()
-    updatePreviewGuideHint()
     const p = $("#pageIndicator")
     if (p) p.textContent = `${idx + 1} / ${state.pageCount || 1}`
   } else {
@@ -1551,7 +1549,13 @@ function render() {
             </div>
             <canvas id="confetti" class="confetti" aria-hidden="true"></canvas>
             <canvas id="overlay" class="overlay"></canvas>
-            <div class="emptyHint" id="previewGuideHint" style="display:none"></div>
+            <div class="emptyHint mainGuidePopup" id="mainGuidePopup">
+              <div class="emptyHint__title">まずはPDFに欄（タグ）を置きましょう</div>
+              <div class="emptyHint__text">PDF上をダブルクリックしてタグ名と値を入力し、欄を配置できます。</div>
+              <div class="emptyHint__actions">
+                <button class="btn btn--primary" id="btnGuidePlace">中央に欄を追加</button>
+              </div>
+            </div>
           </div>`
         : `<div class="previewPlaceholder">プロジェクトZIPを開くとPDFがここに表示されます</div>`
     }
@@ -1588,7 +1592,14 @@ function bind() {
   bindTipFloatOnce()
   bindPreviewFitOnce()
   applyPreviewTransform()
-  updatePreviewGuideHint()
+  const btnGuidePlace = $("#btnGuidePlace")
+  if (btnGuidePlace) btnGuidePlace.onclick = () => {
+    const x = Math.round(0.5 * state.pageW)
+    const y = Math.round(0.5 * state.pageH)
+    if (!x || !y) return
+    openPlacePalette({ x, y })
+  }
+
 
   // Global hotkeys (selection / undo / copy-paste)
   document.onkeydown = async (ev) => {
@@ -3410,8 +3421,6 @@ function openPlacePalette(pt, editFid = null) {
   const close = () => {
     modal.style.display = "none"
     modal.innerHTML = ""
-    state.placePaletteOpen = false
-    updatePreviewGuideHint()
   }
   const pageIdx = Number.isFinite(state.previewPageIndex) ? state.previewPageIndex : 0
   const isEdit = !!editFid
@@ -3422,8 +3431,6 @@ function openPlacePalette(pt, editFid = null) {
   const curLS = Number(currentPl.letter_spacing ?? DEFAULT_LETTER_SPACING) || DEFAULT_LETTER_SPACING
   let writingMode = String(currentPl.writing_mode || "horizontal")
   const tagsOptions = state.tags.map((t) => `<option value="${escapeHtml(t)}"></option>`).join("")
-  state.placePaletteOpen = true
-  updatePreviewGuideHint()
   modal.style.display = "block"
   modal.innerHTML = `
     <div class="modal__backdrop" id="modalClose"></div>
