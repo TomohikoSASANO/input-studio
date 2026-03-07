@@ -658,7 +658,8 @@ function normalizeViewportAtFit() {
 function updatePreviewGuideHint() {
   const hint = $("#previewGuideHint")
   if (!hint) return
-  if (!state.projectPath) {
+  const previewImg = $("#previewImg")
+  if (!previewImg) {
     hint.style.display = "none"
     return
   }
@@ -1120,6 +1121,7 @@ async function showPage(pageIndex) {
         normalizeViewportAtFit()
         applyPreviewTransform()
         drawOverlay()
+        updatePreviewGuideHint()
       }
       img.onerror = () => {
         img.style.visibility = "hidden"
@@ -1139,6 +1141,7 @@ async function showPage(pageIndex) {
       normalizeViewportAtFit()
     }
     drawOverlay()
+    updatePreviewGuideHint()
     const p = $("#pageIndicator")
     if (p) p.textContent = `${idx + 1} / ${state.pageCount || 1}`
   } else {
