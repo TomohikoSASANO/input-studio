@@ -1147,13 +1147,6 @@ function renderGate() {
           <button class="btn btn--soft" id="gateLoadProject">${escapeHtml(tr("gate.loadZip", "プロジェクトZIPを開く"))}${unlockHintBubble("zip_open")}</button>
         </div>
         <div class="label gateHint">${escapeHtml(tr("gate.hint", "PDFから新規作成　／　既存の案件（ZIP・PDF同梱）を開く"))}</div>
-        <div class="gateTrustNav" aria-label="site trust navigation">
-          <a class="gateTrustNav__link" href="/about.html">${escapeHtml(tr("top.nav.about", "企業情報"))}</a>
-          <a class="gateTrustNav__link" href="/contact.html">${escapeHtml(tr("top.nav.contact", "お問い合わせ"))}</a>
-          <a class="gateTrustNav__link" href="/privacy.html">${escapeHtml(tr("top.nav.privacy", "プライバシーポリシー"))}</a>
-          <a class="gateTrustNav__link" href="/terms.html">${escapeHtml(tr("top.nav.terms", "利用規約"))}</a>
-          <a class="gateTrustNav__link" href="/faq.html">${escapeHtml(tr("top.nav.faq", "FAQ"))}</a>
-        </div>
         <div class="gateGuide">
           <div class="gateGuide__title">${escapeHtml(tr("top.value.title", "このサイトでできること"))}</div>
           <div class="gateGuide__item">${escapeHtml(tr("top.value.audience", "対象: 申請書・帳票の入力担当者"))}</div>
@@ -1170,6 +1163,13 @@ function renderGate() {
           <div class="adSlot__title">${escapeHtml(tr("ad.sponsorTitle", "スポンサーからのお知らせ"))}</div>
           <div class="adSlot__body">${escapeHtml(tr("ad.sponsorBody", "ここにバナー広告が表示されます（実装準備中）"))}</div>
           <div class="adSlot__live" aria-label="ad slot gate"></div>
+        </div>
+        <div class="gateTrustNav gateTrustNav--footer" aria-label="site trust navigation">
+          <a class="gateTrustNav__link" href="/about.html">${escapeHtml(tr("top.nav.about", "企業情報"))}</a>
+          <a class="gateTrustNav__link" href="/contact.html">${escapeHtml(tr("top.nav.contact", "お問い合わせ"))}</a>
+          <a class="gateTrustNav__link" href="/privacy.html">${escapeHtml(tr("top.nav.privacy", "プライバシーポリシー"))}</a>
+          <a class="gateTrustNav__link" href="/terms.html">${escapeHtml(tr("top.nav.terms", "利用規約"))}</a>
+          <a class="gateTrustNav__link" href="/faq.html">${escapeHtml(tr("top.nav.faq", "FAQ"))}</a>
         </div>
         ${err ? `<div class="gateError">${escapeHtml(err)}</div>` : ""}
         ${window.__INPUTSTUDIO_DEMO__ ? `<input type="file" id="gateDemoPdf" accept=".pdf,application/pdf" style="display:none" />` : ""}

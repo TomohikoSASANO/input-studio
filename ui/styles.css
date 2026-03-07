@@ -53,6 +53,8 @@ body{
   -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
   animation: gateIn .38s ease;
+  display:flex;
+  flex-direction:column;
 }
 @keyframes gateIn{from{transform:translateY(10px); opacity:0}to{transform:translateY(0); opacity:1}}
 .gateBrand{
@@ -89,6 +91,36 @@ body{
 .gateActions .btn{flex:1}
 .gateHint{margin-top:10px}
 .gateSection{margin-top:16px}
+.gateTrustNav{
+  margin-top:10px;
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+}
+.gateTrustNav--footer{
+  margin-top:12px;
+  padding-top:10px;
+  border-top:1px solid rgba(17,24,39,.10);
+  justify-content:center;
+}
+.gateTrustNav__link{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:6px 11px;
+  border-radius:999px;
+  border:1px solid rgba(17,24,39,.14);
+  background: rgba(255,255,255,.48);
+  color: rgba(15,23,42,.78);
+  text-decoration:none;
+  font-size:11px;
+  font-weight:600;
+  line-height:1.2;
+  box-shadow:none;
+}
+.gateTrustNav__link:hover{
+  background: rgba(255,255,255,.70);
+}
 .gateGuide{
   margin-top:10px;
   border:1px solid rgba(17,24,39,.08);
@@ -830,6 +862,12 @@ select:focus,.input:focus,.textarea:focus{box-shadow:0 0 0 5px rgba(124,92,255,.
 }
 @media (max-width: 900px){
   .pageOpsBoard{grid-template-columns: repeat(2, minmax(0, 1fr))}
+  .gateActions{
+    flex-direction:column;
+  }
+  .gateTrustNav__link{
+    flex:1 1 calc(50% - 8px);
+  }
 }
 .pageCard{
   border:1px solid rgba(17,24,39,.12);
