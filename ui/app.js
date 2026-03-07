@@ -587,11 +587,6 @@ function applyPreviewTransform() {
   const userZoom = clampNum(state.viewZoom || 1, 0.5, 3.0)
   const baseZoom = clampNum(state.viewBaseZoom || 1, 0.6, 1.0)
   const z = clampNum(userZoom * baseZoom, 0.4, 3.0)
-  // Keep the page fully fitted at 100%: avoid residual pan clipping.
-  if (userZoom <= 1.001) {
-    state.viewPanX = 0
-    state.viewPanY = 0
-  }
   const tx = Number(state.viewPanX || 0) || 0
   const ty = Number(state.viewPanY || 0) || 0
   sc.style.transform = `translate(${tx}px, ${ty}px) scale(${z})`
@@ -607,26 +602,20 @@ function resetPreviewViewport({ zoom = 1.0 } = {}) {
 }
 
 function updatePreviewBaseZoom() {
-  const host = $(".previewImg")
-  const img = $("#previewImg")
-  if (!host || !img || !img.naturalWidth || !img.naturalHeight) {
-    state.viewBaseZoom = 1.0
-    return
+  // Keep base zoom neutral; object-fit: contain already handles viewport fitting.
+  state.viewBaseZoom = 1.0
+}
+
+function normalizeViewportAtFit() {
+  if ((Number(state.viewZoom || 1) || 1) <= 1.001) {
+    state.viewPanX = 0
+    state.viewPanY = 0
   }
-  const hostW = Math.max(1, host.clientWidth)
-  const hostH = Math.max(1, host.clientHeight)
-  const iw = Math.max(1, Number(img.naturalWidth || 1))
-  const ih = Math.max(1, Number(img.naturalHeight || 1))
-  // Reserve a small top safe area so the preview HUD does not visually overlap content.
-  const safeTop = 54
-  const targetFit = Math.min(hostW / iw, Math.max(1, hostH - safeTop) / ih)
-  const plainFit = Math.min(hostW / iw, hostH / ih)
-  const ratio = plainFit > 0 ? targetFit / plainFit : 1
-  state.viewBaseZoom = clampNum(ratio, 0.75, 1.0)
 }
 
 async function setViewZoom(nextZoom, { persist = true } = {}) {
   state.viewZoom = clampNum(nextZoom, 0.5, 3.0)
+  normalizeViewportAtFit()
   applyPreviewTransform()
   drawOverlay()
   if (!persist) return
@@ -1022,6 +1011,7 @@ function bindPreviewFitOnce() {
   window.addEventListener("resize", () => {
     if (!state.projectPath) return
     updatePreviewBaseZoom()
+    normalizeViewportAtFit()
     applyPreviewTransform()
     drawOverlay()
   })
@@ -1052,6 +1042,7 @@ async function showPage(pageIndex) {
       img.onload = () => {
         img.style.visibility = "visible"
         updatePreviewBaseZoom()
+        normalizeViewportAtFit()
         applyPreviewTransform()
         drawOverlay()
       }
@@ -1070,6 +1061,7 @@ async function showPage(pageIndex) {
       state.pageW = r.page_display_width || state.pageW
       state.pageH = r.page_display_height || state.pageH
       updatePreviewBaseZoom()
+      normalizeViewportAtFit()
     }
     drawOverlay()
     const p = $("#pageIndicator")
@@ -2465,6 +2457,10 @@ function bind() {
 
     ov.onpointermove = (ev) => {
       if (panning) {
+        if (!(ev.buttons & 4) && !ev.altKey) {
+          panning = false
+          return
+        }
         const dx = ev.clientX - panStartX
         const dy = ev.clientY - panStartY
         state.viewPanX = panBaseX + dx
@@ -2531,6 +2527,23 @@ function bind() {
       } catch {}
       // refresh preview for current page
       showPage(state.previewPageIndex || 0)
+    }
+
+    ov.onpointercancel = () => {
+      panning = false
+      dragging = false
+      dragUndo = null
+      dragStart = null
+      dragBase = null
+      clickTag = null
+    }
+
+    // Prevent browser middle-click auto-scroll from stealing drag interactions.
+    ov.onmousedown = (ev) => {
+      if (ev.button === 1) ev.preventDefault()
+    }
+    ov.onauxclick = (ev) => {
+      if (ev.button === 1) ev.preventDefault()
     }
 
     ov.onclick = async (ev) => {
