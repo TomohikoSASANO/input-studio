@@ -658,7 +658,7 @@ function normalizeViewportAtFit() {
 function updatePreviewGuideHint() {
   const hint = $("#previewGuideHint")
   if (!hint) return
-  if (!state.projectPath || !state.showPreviewHint) {
+  if (!state.projectPath) {
     hint.style.display = "none"
     return
   }
@@ -675,7 +675,6 @@ function updatePreviewGuideHint() {
     <div class="emptyHint__text">${escapeHtml(text)}</div>
     <div class="emptyHint__actions">
       ${paletteMode ? "" : `<button class="btn btn--primary" id="btnAddFromCenter">中央に欄を追加</button>`}
-      <button class="btn btn--soft" id="btnHideHints">この案内を隠す</button>
     </div>
   `
   hint.style.display = "block"
@@ -686,11 +685,6 @@ function updatePreviewGuideHint() {
     const y = Math.round(0.5 * state.pageH)
     if (!x || !y) return
     openPlacePalette({ x, y })
-  }
-  const btnHideHints = $("#btnHideHints")
-  if (btnHideHints) btnHideHints.onclick = () => {
-    state.showPreviewHint = false
-    updatePreviewGuideHint()
   }
 }
 
