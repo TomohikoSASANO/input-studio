@@ -20,6 +20,7 @@
   --r2:26px;
   --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --ui: system-ui, -apple-system, "Segoe UI Variable", "Segoe UI", "Yu Gothic UI", "Hiragino Sans", "Noto Sans JP", Arial, sans-serif;
+  --inputstudio-usable-vh: 100vh;
 }
 
 *{box-sizing:border-box}
@@ -37,7 +38,7 @@ body{
 }
 
 .gate{
-  height:100vh;
+  height: var(--inputstudio-usable-vh, 100vh);
   display:flex;
   align-items:center;
   justify-content:center;
@@ -378,8 +379,7 @@ body{
 
 .layout{
   /* 画面高を最大限使い、下端の余白を減らす */
-  height: calc(100dvh - 12px);
-  height: calc(100vh - 12px);
+  height: calc(var(--inputstudio-usable-vh, 100vh) - 12px);
   display:grid;
   grid-template-columns: clamp(280px, 26vw, 400px) 1fr;
   gap:12px;

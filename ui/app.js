@@ -40,6 +40,30 @@ const LOCALE_OPTIONS = [
 const getLocaleMeta = (locale) => {
   return LOCALE_OPTIONS.find((x) => x.code === String(locale || "").toLowerCase()) || LOCALE_OPTIONS[0]
 }
+let _viewportMetricsBound = false
+function syncViewportMetrics() {
+  const root = document.documentElement
+  if (!root) return
+  const vv = window.visualViewport
+  const rawViewportH = Number(vv?.height || window.innerHeight || document.documentElement.clientHeight || 0)
+  const viewportH = Math.max(1, Math.round(rawViewportH))
+  let usableH = viewportH
+  // Desktop app can report taller than work area; clamp to OS available height (taskbar excluded).
+  if (!isWeb()) {
+    const avail = Number(window.screen?.availHeight || 0)
+    if (avail > 0) usableH = Math.min(usableH, Math.round(avail))
+  }
+  root.style.setProperty("--inputstudio-usable-vh", `${usableH}px`)
+}
+
+function bindViewportMetricsOnce() {
+  if (_viewportMetricsBound) return
+  _viewportMetricsBound = true
+  syncViewportMetrics()
+  window.addEventListener("resize", syncViewportMetrics, { passive: true })
+  window.visualViewport?.addEventListener?.("resize", syncViewportMetrics, { passive: true })
+}
+
 const AD_UNLOCK_RULES = {
   zip_open: { cooldownMs: 5 * 60 * 1000, maxPerSession: 2 },
   pdf_append: { cooldownMs: 3 * 60 * 1000, maxPerSession: 3 },
@@ -4096,6 +4120,7 @@ function enableOverlayPointer(on) {
 }
 
 async function boot() {
+  bindViewportMetricsOnce()
   try {
     await window.i18n?.ready
     state.locale = getLocaleSafe()
