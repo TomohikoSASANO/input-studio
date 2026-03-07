@@ -611,6 +611,21 @@ function applyPreviewTransform() {
   const userZoom = clampNum(state.viewZoom || 1, 0.5, 3.0)
   const baseZoom = clampNum(state.viewBaseZoom || 1, 0.6, 1.0)
   const z = clampNum(userZoom * baseZoom, 0.4, 3.0)
+  const host = $("#previewImg")
+  if (host) {
+    const r = host.getBoundingClientRect()
+    const w = Math.max(1, Number(r.width || 0))
+    const h = Math.max(1, Number(r.height || 0))
+    if (z <= 1.001) {
+      state.viewPanX = 0
+      state.viewPanY = 0
+    } else {
+      const maxX = Math.max(0, ((w * z) - w) / 2)
+      const maxY = Math.max(0, ((h * z) - h) / 2)
+      state.viewPanX = clampNum(state.viewPanX || 0, -maxX, maxX)
+      state.viewPanY = clampNum(state.viewPanY || 0, -maxY, maxY)
+    }
+  }
   const tx = Number(state.viewPanX || 0) || 0
   const ty = Number(state.viewPanY || 0) || 0
   sc.style.transform = `translate(${tx}px, ${ty}px) scale(${z})`
@@ -631,7 +646,8 @@ function updatePreviewBaseZoom() {
 }
 
 function normalizeViewportAtFit() {
-  if ((Number(state.viewZoom || 1) || 1) <= 1.001) {
+  const z = clampNum((Number(state.viewZoom || 1) || 1) * (Number(state.viewBaseZoom || 1) || 1), 0.4, 3.0)
+  if (z <= 1.001) {
     state.viewPanX = 0
     state.viewPanY = 0
   }
@@ -2432,6 +2448,15 @@ function bind() {
       if (!state.projectPath) return
       if (state.designMode) return
       if (ev.button === 1 || ev.altKey) {
+        const effectiveZoom = clampNum((Number(state.viewZoom || 1) || 1) * (Number(state.viewBaseZoom || 1) || 1), 0.4, 3.0)
+        if (effectiveZoom <= 1.001) {
+          state.viewPanX = 0
+          state.viewPanY = 0
+          applyPreviewTransform()
+          drawOverlay()
+          ev.preventDefault()
+          return
+        }
         panning = true
         panStartX = ev.clientX
         panStartY = ev.clientY
