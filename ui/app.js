@@ -2411,14 +2411,56 @@ function bind() {
     enableOverlayPointer(!!state.projectPath)
     const previewHost = ov.parentElement
     if (previewHost) {
-      previewHost.addEventListener("wheel", (ev) => {
-        if (!state.projectPath) return
-        ev.preventDefault()
-        const withCtrl = !!(ev.ctrlKey || ev.metaKey)
-        const step = withCtrl ? 0.2 : 0.1
-        const dir = ev.deltaY > 0 ? -step : step
-        setViewZoom((Number(state.viewZoom || 1) || 1) + dir)
-      }, { passive: false })
+      if (!previewHost.__inputstudioWheelBound) {
+        previewHost.__inputstudioWheelBound = true
+        previewHost.addEventListener("wheel", (ev) => {
+          if (!state.projectPath) return
+          ev.preventDefault()
+          const withCtrl = !!(ev.ctrlKey || ev.metaKey)
+          const step = withCtrl ? 0.2 : 0.1
+          const dir = ev.deltaY > 0 ? -step : step
+          setViewZoom((Number(state.viewZoom || 1) || 1) + dir)
+        }, { passive: false })
+      }
+      // Fallback for environments where pointer middle-drag stops working after zoom.
+      if (!previewHost.__inputstudioMiddlePanBound) {
+        previewHost.__inputstudioMiddlePanBound = true
+        let middlePanning = false
+        let startX = 0
+        let startY = 0
+        let baseX = 0
+        let baseY = 0
+        const onMove = (ev) => {
+          if (!middlePanning) return
+          const dx = ev.clientX - startX
+          const dy = ev.clientY - startY
+          state.viewPanX = baseX + dx
+          state.viewPanY = baseY + dy
+          applyPreviewTransform()
+          drawOverlay()
+        }
+        const onUp = () => {
+          if (!middlePanning) return
+          middlePanning = false
+          window.removeEventListener("mousemove", onMove, true)
+          window.removeEventListener("mouseup", onUp, true)
+        }
+        previewHost.addEventListener("mousedown", (ev) => {
+          if (!state.projectPath || state.designMode) return
+          if (ev.button !== 1) return
+          middlePanning = true
+          startX = ev.clientX
+          startY = ev.clientY
+          baseX = Number(state.viewPanX || 0) || 0
+          baseY = Number(state.viewPanY || 0) || 0
+          window.addEventListener("mousemove", onMove, true)
+          window.addEventListener("mouseup", onUp, true)
+          ev.preventDefault()
+        }, { passive: false })
+        previewHost.addEventListener("auxclick", (ev) => {
+          if (ev.button === 1) ev.preventDefault()
+        }, { passive: false })
+      }
     }
     const toPageXY = (ev) => {
       const img = $("#previewImg")
