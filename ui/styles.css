@@ -810,6 +810,24 @@ select:focus,.input:focus,.textarea:focus{box-shadow:0 0 0 5px rgba(124,92,255,.
   border-color: rgba(124,92,255,.30);
   background: rgba(245,240,255,.86);
 }
+.paletteGuideCard{
+  border-radius:16px;
+  border:1px solid rgba(124,92,255,.22);
+  background: rgba(255,255,255,.88);
+  box-shadow: 0 16px 40px rgba(17,24,39,.16);
+  padding:10px 12px;
+}
+.paletteGuideCard__title{
+  font-size:12px;
+  font-weight:800;
+  color: var(--text);
+}
+.paletteGuideCard__text{
+  margin-top:4px;
+  font-size:12px;
+  line-height:1.45;
+  color: var(--muted);
+}
 .emptyHint__title{font-weight:900; font-size:14px}
 .emptyHint__text{margin-top:4px; font-size:12px; color:var(--muted); line-height:1.4}
 .emptyHint__actions{margin-top:10px; display:flex; gap:10px; flex-wrap:wrap}

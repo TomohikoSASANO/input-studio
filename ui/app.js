@@ -562,7 +562,6 @@ state.lastSession = loadLocal("inputstudio-last-session", null)
 state.lastProjectDir = loadLocal("inputstudio-last-dir", null)
 state.showPanel = loadLocal("inputstudio-show-panel", true)
 state.adLastShown = loadLocal("inputstudio-ad-last-shown", {})
-state.showPreviewHint = loadLocal("inputstudio-show-preview-hint", true)
 
 function loadLocal(key, fallback) {
   try {
@@ -691,7 +690,6 @@ function updatePreviewGuideHint() {
   const btnHideHints = $("#btnHideHints")
   if (btnHideHints) btnHideHints.onclick = () => {
     state.showPreviewHint = false
-    saveLocal("inputstudio-show-preview-hint", false)
     updatePreviewGuideHint()
   }
 }
@@ -1314,6 +1312,8 @@ function renderGate() {
       state.timerStart = null
       state.privateTotal = 0
       state.appStage = "main"
+      state.showPreviewHint = true
+      state.placePaletteOpen = false
       resetPreviewViewport({ zoom: 1.0 })
       const started = await autoStartWorkIfPossible()
       toast(started ? "新規案件を作成し、作業タイマーを開始しました" : "PDFから新規プロジェクトを作成しました。必要に応じてタグを配置してください。")
@@ -1363,6 +1363,8 @@ function renderGate() {
       state.timerStart = null
       state.privateTotal = 0
       state.appStage = "main"
+      state.showPreviewHint = true
+      state.placePaletteOpen = false
       resetPreviewViewport({ zoom: 1.0 })
       const started = await autoStartWorkIfPossible()
       toast(started ? tr("gate.toastLoadedZipAndTimer", "ZIPを読み込み、作業タイマーを開始しました") : tr("gate.toastLoadedZip", "ZIPを読み込みました"))
@@ -1422,6 +1424,8 @@ function renderGate() {
         state.values = {}
         state.placements = {}
         state.appStage = "main"
+        state.showPreviewHint = true
+        state.placePaletteOpen = false
         toast(`PDFを読み込みました（${doc.numPages}ページ）`)
         render()
       } catch (e) {
@@ -3509,6 +3513,10 @@ function openPlacePalette(pt, editFid = null) {
       <div class="badge badge--soft" style="margin-top:8px">タグ名をクリックで選択 → 値は即反映</div>
       <div class="tagPane" id="tagQuickPane" style="margin-top:10px; max-height: calc(100vh - 220px)"></div>
     </div>
+    <div class="modal__card modal__card--anchored paletteGuideCard" id="paletteGuideCard" style="max-width:420px; width:min(420px, calc(100vw - 40px))">
+      <div class="paletteGuideCard__title">配置のコツ</div>
+      <div class="paletteGuideCard__text">タグ名と値を入力して配置しよう。タグ一覧のタグをクリックすると既存タグを呼び出せます。同じタグはまとめて値を編集できます。</div>
+    </div>
   `
   const original = isEdit
     ? {
@@ -3564,6 +3572,7 @@ function openPlacePalette(pt, editFid = null) {
   const pageInput = $("#pPage")
   const card = $("#paletteCard")
   const tagCard = $("#tagCard")
+  const guideCard = $("#paletteGuideCard")
   const tagQuickPane = $("#tagQuickPane")
   const tagSearch = $("#tagSearch")
 
@@ -3848,6 +3857,15 @@ function openPlacePalette(pt, editFid = null) {
       else p2 = clamp(p2.l, p2.t)
       tagCard.style.left = `${Math.round(p2.l)}px`
       tagCard.style.top = `${Math.round(p2.t)}px`
+    }
+    // Keep guide popup at bottom-left inside visible stage area.
+    if (guideCard) {
+      const w3 = guideCard.getBoundingClientRect().width || 380
+      const h3 = guideCard.getBoundingClientRect().height || 120
+      const gLeft = Math.min(Math.max(bounds.left + 8, bounds.left), Math.max(bounds.left, bounds.right - w3 - 8))
+      const gTop = Math.min(Math.max(bounds.top + 8, bounds.top), Math.max(bounds.top, bounds.bottom - h3 - 8))
+      guideCard.style.left = `${Math.round(gLeft)}px`
+      guideCard.style.top = `${Math.round(gTop)}px`
     }
   }
   requestAnimationFrame(() => {
