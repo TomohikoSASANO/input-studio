@@ -40,6 +40,25 @@ const LOCALE_OPTIONS = [
 const getLocaleMeta = (locale) => {
   return LOCALE_OPTIONS.find((x) => x.code === String(locale || "").toLowerCase()) || LOCALE_OPTIONS[0]
 }
+function getLocaleFromQuery() {
+  try {
+    const q = new URLSearchParams(window.location.search || "")
+    const v = String(q.get("lang") || "").trim().toLowerCase()
+    if (!v) return null
+    const hit = LOCALE_OPTIONS.find((x) => x.code === v)
+    return hit ? hit.code : null
+  } catch {
+    return null
+  }
+}
+function syncLocaleQuery(locale) {
+  if (!isWeb()) return
+  try {
+    const url = new URL(window.location.href)
+    url.searchParams.set("lang", String(locale || "ja").toLowerCase())
+    window.history.replaceState({}, "", url.toString())
+  } catch {}
+}
 let _viewportMetricsBound = false
 function syncViewportMetrics() {
   const root = document.documentElement
@@ -1233,6 +1252,10 @@ function renderGate() {
           <div class="adSlot__live" aria-label="ad slot gate"></div>
         </div>
         <div class="gateTrustNav gateTrustNav--footer" aria-label="site trust navigation">
+          <a class="gateTrustNav__link" href="/global-search.html">${escapeHtml(tr("top.nav.global", "多言語検索ガイド"))}</a>
+          <a class="gateTrustNav__link" href="/solutions.html">${escapeHtml(tr("top.nav.guide", "活用ガイド"))}</a>
+          <a class="gateTrustNav__link" href="/application-form-filling.html">${escapeHtml(tr("top.nav.forms", "申請書/様式入力"))}</a>
+          <a class="gateTrustNav__link" href="/pdf-merge-split.html">${escapeHtml(tr("top.nav.tools", "PDF結合/分割"))}</a>
           <a class="gateTrustNav__link" href="/about.html">${escapeHtml(tr("top.nav.about", "企業情報"))}</a>
           <a class="gateTrustNav__link" href="/contact.html">${escapeHtml(tr("top.nav.contact", "お問い合わせ"))}</a>
           <a class="gateTrustNav__link" href="/privacy.html">${escapeHtml(tr("top.nav.privacy", "プライバシーポリシー"))}</a>
@@ -1254,6 +1277,7 @@ function renderGate() {
     gateLocale.onchange = () => {
       const next = String(gateLocale.value || "ja")
       state.locale = window.i18n?.setLocale?.(next) || next
+      syncLocaleQuery(state.locale)
       renderGate()
     }
   }
@@ -4220,7 +4244,13 @@ async function boot() {
   bindViewportMetricsOnce()
   try {
     await window.i18n?.ready
-    state.locale = getLocaleSafe()
+    const fromQuery = getLocaleFromQuery()
+    if (fromQuery) {
+      state.locale = window.i18n?.setLocale?.(fromQuery) || fromQuery
+    } else {
+      state.locale = getLocaleSafe()
+      syncLocaleQuery(state.locale)
+    }
   } catch {}
   try {
     await ensureAdSenseScript()

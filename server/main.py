@@ -9,10 +9,12 @@ import os
 import sys
 import uuid
 import json
+import re
 import time
 import asyncio
 import zipfile
 import threading
+from datetime import datetime, timezone
 from collections import deque
 from pathlib import Path
 from typing import Any
@@ -30,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # Import the existing Api class
 from app import Api, ROOT, _ensure_dirs, LOCAL, PROJECTS_DIR
 
-app = FastAPI(title="Input Studio Web API")
+app = FastAPI(title="PDF Input Studio Web API")
 
 # CORS middleware
 app.add_middleware(
@@ -74,6 +76,11 @@ _HEAVY_PATH_HINTS = (
     "/reorder-pages",
 )
 
+_SITE_BASE_URL = str(
+    os.environ.get("INPUTSTUDIO_SITE_BASE_URL", "https://pdf-input-studio.kanazawa-application-support.jp")
+).rstrip("/")
+_SEO_LOCALES = ["ja", "en", "zh", "hi", "es", "fr", "ar", "pt", "ru", "bn", "id", "ur", "de", "it", "tr", "vi", "ko", "fa", "th", "pl", "uk", "nl"]
+
 
 def _client_ip(request: Request) -> str:
     xff = str(request.headers.get("x-forwarded-for") or "").strip()
@@ -105,6 +112,20 @@ def _is_rate_limited(ip: str) -> bool:
             return True
         bucket.append(now)
         return False
+
+
+def _abs_url(path: str) -> str:
+    if not path.startswith("/"):
+        path = "/" + path
+    return f"{_SITE_BASE_URL}{path}"
+
+
+def _iso_mtime(path: Path) -> str:
+    try:
+        dt = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+    except Exception:
+        dt = datetime.now(timezone.utc)
+    return dt.strftime("%Y-%m-%d")
 
 
 async def _read_upload_limited(upload_file: UploadFile, label: str) -> bytes:
@@ -938,6 +959,78 @@ async def ad_config_js():
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     return response
+
+
+@app.get("/robots.txt")
+async def robots_txt():
+    body = (
+        "User-agent: *\n"
+        "Allow: /\n"
+        f"Sitemap: {_abs_url('/sitemap.xml')}\n"
+    )
+    return Response(content=body, media_type="text/plain")
+
+
+@app.get("/sitemap.xml")
+async def sitemap_xml():
+    page_paths = [
+        "/",
+        "/about.html",
+        "/contact.html",
+        "/faq.html",
+        "/privacy.html",
+        "/terms.html",
+        "/solutions.html",
+        "/application-form-filling.html",
+        "/pdf-merge-split.html",
+        "/global-search.html",
+    ]
+    pages: list[tuple[str, str]] = []
+    for path in page_paths:
+        file_name = "index.html" if path == "/" else path.lstrip("/")
+        fp = ui_dir / file_name
+        pages.append((_abs_url(path), _iso_mtime(fp)))
+    for loc in _SEO_LOCALES:
+        pages.append((f"{_abs_url('/')}?lang={loc}", _iso_mtime(ui_dir / "index.html")))
+    items = "\n".join(
+        f"<url><loc>{loc}</loc><lastmod>{lastmod}</lastmod></url>" for (loc, lastmod) in pages
+    )
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        f"{items}\n"
+        "</urlset>\n"
+    )
+    return Response(content=xml, media_type="application/xml")
+
+
+def _ads_txt_line_from_client(client_id: str) -> str:
+    """Build an ads.txt line from AdSense client ID if possible."""
+    cid = str(client_id or "").strip()
+    if not cid:
+        return ""
+    m = re.search(r"(?:ca-)?pub-(\d+)", cid, flags=re.IGNORECASE)
+    if not m:
+        return ""
+    pub_id = m.group(1)
+    # Google official seller line format
+    return f"google.com, pub-{pub_id}, DIRECT, f08c47fec0942fa0"
+
+
+@app.get("/ads.txt")
+async def ads_txt():
+    """
+    Serve ads.txt for AdSense domain verification.
+    Priority:
+      1) INPUTSTUDIO_ADS_TXT_LINE (full custom line)
+      2) Derived from INPUTSTUDIO_ADSENSE_CLIENT
+    """
+    line = str(os.environ.get("INPUTSTUDIO_ADS_TXT_LINE", "")).strip()
+    if not line:
+        line = _ads_txt_line_from_client(str(os.environ.get("INPUTSTUDIO_ADSENSE_CLIENT", "")).strip())
+    if not line:
+        raise HTTPException(status_code=404, detail="ads.txt not configured")
+    return Response(content=line + "\n", media_type="text/plain")
 
 # Mount static files for UI assets (CSS, JS, images, etc.)
 # Note: API routes must be defined BEFORE static file mounting
