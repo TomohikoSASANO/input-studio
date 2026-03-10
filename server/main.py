@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # Import the existing Api class
 from app import Api, ROOT, _ensure_dirs, LOCAL, PROJECTS_DIR
 
-app = FastAPI(title="PDF Input Studio Web API")
+app = FastAPI(title="PDF Template Builder Web API")
 
 # CORS middleware
 app.add_middleware(
@@ -210,7 +210,7 @@ async def root():
     index_path = ui_dir / "index.html"
     if index_path.exists():
         return FileResponse(str(index_path), media_type="text/html")
-    return {"message": "Input Studio Web API - UI not found"}
+    return {"message": "PDF Template Builder Web API - UI not found"}
 
 
 @app.post("/api/session")
@@ -984,6 +984,10 @@ async def sitemap_xml():
         "/application-form-filling.html",
         "/pdf-merge-split.html",
         "/global-search.html",
+        "/pricing.html",
+        "/template-builder.html",
+        "/template-automation.html",
+        "/pdf-template-workflow.html",
     ]
     pages: list[tuple[str, str]] = []
     for path in page_paths:

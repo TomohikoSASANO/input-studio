@@ -1235,15 +1235,15 @@ function renderGate() {
         </div>
         <div class="label gateHint">${escapeHtml(tr("gate.hint", "PDFから新規作成　／　既存の案件（ZIP・PDF同梱）を開く"))}</div>
         <div class="gateGuide">
-          <div class="gateGuide__title">${escapeHtml(tr("top.value.title", "このサイトでできること"))}</div>
-          <div class="gateGuide__item">${escapeHtml(tr("top.value.audience", "対象: 申請書・帳票の入力担当者"))}</div>
-          <div class="gateGuide__item">${escapeHtml(tr("top.value.benefit1", "価値1: タグ同期で同じ項目を一括更新"))}</div>
-          <div class="gateGuide__item">${escapeHtml(tr("top.value.benefit2", "価値2: ZIPで案件を持ち運びしやすい"))}</div>
-          <div class="gateGuide__item">${escapeHtml(tr("top.value.benefit3", "価値3: 入力からPDF出力までブラウザで完結"))}</div>
-          <div class="gateGuide__title" style="margin-top:6px">${escapeHtml(tr("top.howto.title", "使い方（3ステップ）"))}</div>
-          <div class="gateGuide__item">${escapeHtml(tr("top.howto.step1", "1. プロジェクトZIPを開く（またはPDFから新規作成）"))}</div>
-          <div class="gateGuide__item">${escapeHtml(tr("top.howto.step2", "2. 項目を入力して必要に応じてページ操作"))}</div>
-          <div class="gateGuide__item">${escapeHtml(tr("top.howto.step3", "3. PDFダウンロード / プロジェクト保存"))}</div>
+          <div class="gateGuide__title">${escapeHtml(tr("top.value.title", "Build reusable PDF templates"))}</div>
+          <div class="gateGuide__item">${escapeHtml(tr("top.value.audience", "For business users and teams handling repetitive forms"))}</div>
+          <div class="gateGuide__item">${escapeHtml(tr("top.value.benefit1", "Edit one field. Update every document."))}</div>
+          <div class="gateGuide__item">${escapeHtml(tr("top.value.benefit2", "Reuse projects with ZIP handoff across teammates."))}</div>
+          <div class="gateGuide__item">${escapeHtml(tr("top.value.benefit3", "Merge, split, and finalize PDFs in one workflow."))}</div>
+          <div class="gateGuide__title" style="margin-top:6px">${escapeHtml(tr("top.howto.title", "How it works (3 steps)"))}</div>
+          <div class="gateGuide__item">${escapeHtml(tr("top.howto.step1", "1. Open a project ZIP or start from PDF"))}</div>
+          <div class="gateGuide__item">${escapeHtml(tr("top.howto.step2", "2. Place tags and edit values once"))}</div>
+          <div class="gateGuide__item">${escapeHtml(tr("top.howto.step3", "3. Download final PDFs or save reusable project"))}</div>
         </div>
         <div class="adSlot adSlot--gate" id="adSlotGate">
           <div class="adSlot__label">${escapeHtml(tr("ad.label", "広告"))}</div>
@@ -1256,6 +1256,8 @@ function renderGate() {
           <a class="gateTrustNav__link" href="/solutions.html">${escapeHtml(tr("top.nav.guide", "活用ガイド"))}</a>
           <a class="gateTrustNav__link" href="/application-form-filling.html">${escapeHtml(tr("top.nav.forms", "申請書/様式入力"))}</a>
           <a class="gateTrustNav__link" href="/pdf-merge-split.html">${escapeHtml(tr("top.nav.tools", "PDF結合/分割"))}</a>
+          <a class="gateTrustNav__link" href="/template-builder.html">${escapeHtml(tr("top.nav.templateBuilder", "Template Builder (EN)"))}</a>
+          <a class="gateTrustNav__link" href="/pricing.html">${escapeHtml(tr("top.nav.pricing", "料金"))}</a>
           <a class="gateTrustNav__link" href="/about.html">${escapeHtml(tr("top.nav.about", "企業情報"))}</a>
           <a class="gateTrustNav__link" href="/contact.html">${escapeHtml(tr("top.nav.contact", "お問い合わせ"))}</a>
           <a class="gateTrustNav__link" href="/privacy.html">${escapeHtml(tr("top.nav.privacy", "プライバシーポリシー"))}</a>
