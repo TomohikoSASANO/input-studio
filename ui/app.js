@@ -1234,6 +1234,7 @@ function renderGate() {
           <button class="btn btn--soft" id="gateLoadProject">${escapeHtml(tr("gate.loadZip", "プロジェクトZIPを開く"))}${unlockHintBubble("zip_open")}</button>
         </div>
         <div class="label gateHint">${escapeHtml(tr("gate.hint", "PDFから新規作成　／　既存の案件（ZIP・PDF同梱）を開く"))}</div>
+        <div class="label gateHint">${escapeHtml(tr("top.notice.trust", "運営情報・お問い合わせ・規約・プライバシーはページ下部リンクから確認できます。"))}</div>
         <div class="gateGuide">
           <div class="gateGuide__title">${escapeHtml(tr("top.value.title", "Build reusable PDF templates"))}</div>
           <div class="gateGuide__item">${escapeHtml(tr("top.value.audience", "For business users and teams handling repetitive forms"))}</div>
