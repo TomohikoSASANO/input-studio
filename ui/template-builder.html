@@ -226,6 +226,19 @@
     .hero__actions { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 12px; margin-bottom: 56px; }
     .hero__proof { display: flex; align-items: center; justify-content: center; gap: 24px; flex-wrap: wrap; }
     .hero__proof-item { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-muted); }
+    .hero__meta {
+      margin-top: 18px;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.03);
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .hero__meta strong { color: var(--text); font-weight: 700; }
 
     .demo-window {
       margin-top: 64px;
@@ -396,6 +409,187 @@
     .usecase-card h3 { font-family: var(--font-body); font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
     .usecase-card p { font-size: 13px; color: var(--text-muted); }
 
+    .utility-section { background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0)); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .ops-card {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+    }
+    .ops-card h3 { font-family: var(--font-body); font-size: 17px; font-weight: 700; color: #fff; margin-bottom: 12px; }
+    .ops-card p { font-size: 14px; color: var(--text-muted); margin-bottom: 14px; }
+    .ops-list { list-style: none; }
+    .ops-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .ops-list li:last-child { border-bottom: none; }
+    .ops-list li::before {
+      content: '•';
+      color: var(--accent);
+      font-size: 16px;
+      line-height: 1;
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+
+    .fit-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+    .fit-card {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+    }
+    .fit-card--good { box-shadow: inset 0 0 0 1px rgba(61,220,132,0.18); }
+    .fit-card--care { box-shadow: inset 0 0 0 1px rgba(240,165,0,0.14); }
+    .fit-card__label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+    .fit-card--good .fit-card__label { color: var(--green); }
+    .fit-card--care .fit-card__label { color: var(--accent); }
+
+    .workflow-table-wrap {
+      overflow-x: auto;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+    }
+    .workflow-table {
+      width: 100%;
+      min-width: 760px;
+      border-collapse: collapse;
+    }
+    .workflow-table th,
+    .workflow-table td {
+      text-align: left;
+      vertical-align: top;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .workflow-table th {
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      background: rgba(255,255,255,0.02);
+    }
+    .workflow-table td { color: var(--text-muted); }
+    .workflow-table td strong { color: var(--text); font-weight: 700; }
+    .workflow-table tr:last-child td { border-bottom: none; }
+
+    .checklist-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+    .checklist-card {
+      background: var(--bg-3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+    }
+    .checklist-card h3 { font-family: var(--font-body); font-size: 16px; color: #fff; margin-bottom: 12px; }
+    .checklist-card p { font-size: 13px; color: var(--text-muted); margin-bottom: 12px; }
+    .checklist { list-style: none; }
+    .checklist li {
+      position: relative;
+      padding: 9px 0 9px 28px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .checklist li:last-child { border-bottom: none; }
+    .checklist li::before {
+      content: '✓';
+      position: absolute;
+      left: 0;
+      top: 8px;
+      color: var(--green);
+      font-weight: 700;
+    }
+
+    .resource-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+    .resource-card {
+      display: block;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 22px;
+      transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
+      text-decoration: none;
+    }
+    .resource-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255,255,255,0.18);
+      box-shadow: 0 16px 40px rgba(0,0,0,0.22);
+      text-decoration: none;
+    }
+    .resource-card__eyebrow {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+    .resource-card h3 {
+      font-family: var(--font-body);
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 8px;
+    }
+    .resource-card p { font-size: 13px; color: var(--text-muted); }
+
+    .policy-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+    .policy-card {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      min-height: 100%;
+    }
+    .policy-card h3 { font-family: var(--font-body); font-size: 16px; color: #fff; margin-bottom: 10px; }
+    .policy-card p { font-size: 13px; color: var(--text-muted); margin-bottom: 10px; }
+    .policy-card__mini {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+
+    .mistake-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+    .mistake-card {
+      background: var(--bg-3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+    }
+    .mistake-card h3 { font-family: var(--font-body); font-size: 16px; color: #fff; margin-bottom: 8px; }
+    .mistake-card p { font-size: 13px; color: var(--text-muted); margin-bottom: 12px; }
+    .mistake-card__fix {
+      display: block;
+      font-size: 12px;
+      color: var(--text);
+      background: rgba(61,220,132,0.08);
+      border: 1px solid rgba(61,220,132,0.16);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+
     .pricing-section { background: var(--bg-2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
     .pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
     .pricing-card { background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 28px; position: relative; }
@@ -491,6 +685,7 @@
       .prob-sol__col--problem { border-right: none; border-bottom: 1px solid var(--border); }
       .prob-sol__divider { display: none; }
       .pricing-grid { grid-template-columns: 1fr; }
+      .fit-grid, .checklist-grid, .resource-grid, .policy-grid, .mistake-grid { grid-template-columns: 1fr; }
       .demo-window__body { grid-template-columns: 1fr; }
       .tag-sync-demo { grid-template-columns: 1fr; }
       .zip-demo { grid-template-columns: 1fr; }
@@ -573,6 +768,10 @@
               </svg>
               Project ZIP export
             </span>
+          </div>
+          <div class="hero__meta fade-in-3">
+            <span><strong>Last updated:</strong> 2026-03-14</span>
+            <span>Practical guidance for reusable PDF template workflows</span>
           </div>
         </div>
 
@@ -879,6 +1078,205 @@
           <article class="usecase-card"><div class="usecase-card__industry">Consulting &amp; Agencies</div><h3>Client deliverable bundles</h3><p>Package reports, proposals, and invoices into a single ZIP.</p></article>
           <article class="usecase-card"><div class="usecase-card__industry">Real Estate</div><h3>Property documents</h3><p>Fill addresses, tenant names, and terms across lease agreements and disclosure forms in one workflow.</p></article>
           <article class="usecase-card"><div class="usecase-card__industry">Education &amp; Training</div><h3>Certificates and handouts</h3><p>Issue personalized completion certificates or print-ready course materials with participant details auto-filled.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section utility-section" aria-labelledby="fit-title">
+      <div class="container">
+        <div class="section-header text-center">
+          <div class="eyebrow">Planning Guide</div>
+          <h2 id="fit-title">When this workflow is a strong fit</h2>
+          <p>Use this quick fit-check to decide whether a reusable PDF template workflow matches your document process.</p>
+        </div>
+        <div class="fit-grid">
+          <article class="fit-card fit-card--good">
+            <div class="fit-card__label">Good fit</div>
+            <ul class="ops-list">
+              <li>You update the same client, date, address, amount, or reference fields in multiple places.</li>
+              <li>You hand projects to teammates and need a repeatable ZIP-based package.</li>
+              <li>You combine template filling with merge, split, reorder, or attachment workflows.</li>
+              <li>You want a reusable setup for recurring forms, invoices, contracts, or onboarding packets.</li>
+            </ul>
+          </article>
+          <article class="fit-card fit-card--care">
+            <div class="fit-card__label">Less ideal</div>
+            <ul class="ops-list">
+              <li>One-off PDFs with no repeated fields usually do not need a template workflow.</li>
+              <li>If every document has completely different structure, tag reuse will be limited.</li>
+              <li>Very large projects should be split into batches so review and correction stay manageable.</li>
+              <li>Scanned or low-quality source PDFs should be cleaned up before building reusable templates.</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="matrix-title">
+      <div class="container">
+        <div class="section-header">
+          <div class="eyebrow">Workflow Matrix</div>
+          <h2 id="matrix-title">Practical setup patterns for common document jobs</h2>
+          <p>This matrix shows what to sync, how to package outputs, and which feature to start with for common document operations.</p>
+        </div>
+        <div class="workflow-table-wrap" role="region" aria-label="Document workflow examples">
+          <table class="workflow-table">
+            <thead>
+              <tr>
+                <th>Scenario</th>
+                <th>Repeated values to sync</th>
+                <th>Recommended output</th>
+                <th>Key feature to use first</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Monthly application packs</strong></td>
+                <td>Applicant name, target month, office name, approval date, contact details</td>
+                <td>Filled PDF plus reusable project ZIP for next month</td>
+                <td>Tag sync, then pre-submission checklist</td>
+              </tr>
+              <tr>
+                <td><strong>Invoice bundles</strong></td>
+                <td>Client name, invoice number, due date, billing amount, tax labels</td>
+                <td>Per-client PDF output and archived template bundle</td>
+                <td>Shared tag naming and ZIP handoff</td>
+              </tr>
+              <tr>
+                <td><strong>Contract document sets</strong></td>
+                <td>Party names, start date, contract ID, contact blocks, signature labels</td>
+                <td>One merged handoff pack for review or signature routing</td>
+                <td>Template reuse with page reorder</td>
+              </tr>
+              <tr>
+                <td><strong>Onboarding packets</strong></td>
+                <td>New hire name, title, location, manager, joining date</td>
+                <td>Single ZIP containing offer, checklist, and supporting PDFs</td>
+                <td>Tag sync across multi-document sets</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="checklist-title">
+      <div class="container">
+        <div class="section-header text-center">
+          <div class="eyebrow">Export Checklist</div>
+          <h2 id="checklist-title">Useful checks before you ship a final PDF</h2>
+          <p>These checks help reduce avoidable mistakes when exporting a final PDF or handing a reusable template to another team member.</p>
+        </div>
+        <div class="checklist-grid">
+          <article class="checklist-card">
+            <h3>Template quality checks</h3>
+            <p>Run these before saving a template that other people will reuse.</p>
+            <ul class="checklist">
+              <li>Use consistent tag names for the same business value across all files.</li>
+              <li>Test one realistic sample data set before handing the template to teammates.</li>
+              <li>Make sure page order, attachments, and merged outputs reflect the actual delivery format.</li>
+              <li>Keep source PDFs readable and remove outdated pages before building a reusable version.</li>
+            </ul>
+          </article>
+          <article class="checklist-card">
+            <h3>Final output checks</h3>
+            <p>Review these items before sending a client-facing or submission-ready PDF.</p>
+            <ul class="checklist">
+              <li>Verify dates, names, amounts, and reference numbers after the last edit.</li>
+              <li>Open the exported PDF and visually confirm line breaks, alignment, and missing pages.</li>
+              <li>When handing off work, include the project ZIP so the next person can reproduce the same result.</li>
+              <li>Archive the final PDF separately from the reusable template bundle to avoid version confusion.</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" style="background:var(--bg-2);border-top:1px solid var(--border);" aria-labelledby="resources-title">
+      <div class="container">
+        <div class="section-header text-center">
+          <div class="eyebrow">Learn More</div>
+          <h2 id="resources-title">Detailed guides for real-world document operations</h2>
+          <p>Go deeper with related guides, workflow notes, and case-study examples for recurring document operations.</p>
+        </div>
+        <div class="resource-grid">
+          <a class="resource-card" href="/case-studies-en.html">
+            <div class="resource-card__eyebrow">Examples</div>
+            <h3>Case studies</h3>
+            <p>See recurring application, invoice, and team handoff workflows in more detail.</p>
+          </a>
+          <a class="resource-card" href="/template-automation.html">
+            <div class="resource-card__eyebrow">Concepts</div>
+            <h3>Automation guide</h3>
+            <p>Understand how reusable PDF templates fit into ongoing business operations.</p>
+          </a>
+          <a class="resource-card" href="/pdf-template-workflow.html">
+            <div class="resource-card__eyebrow">Operations</div>
+            <h3>Workflow tips</h3>
+            <p>Review the recommended sequence from source PDF to reusable project ZIP.</p>
+          </a>
+          <a class="resource-card" href="/pricing.html">
+            <div class="resource-card__eyebrow">Access</div>
+            <h3>Pricing and roadmap</h3>
+            <p>Check current free access, ad-supported usage, and planned Pro or Team paths.</p>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section utility-section" aria-labelledby="policy-title">
+      <div class="container">
+        <div class="section-header text-center">
+          <div class="eyebrow">Operating Policy</div>
+          <h2 id="policy-title">Short operational policy summary</h2>
+          <p>This page also acts as a practical information resource. These summary points help visitors understand how to evaluate and operate the workflow safely.</p>
+        </div>
+        <div class="policy-grid">
+          <article class="policy-card">
+            <div class="policy-card__mini">Files and handling</div>
+            <h3>Review file handling before production use</h3>
+            <p>The app supports common PDF workflow operations, but teams should validate their own source files, sizes, and review procedures before relying on it for recurring jobs.</p>
+            <p>For handling details, policy text, and contact information, use the privacy policy, terms, and company pages linked below.</p>
+          </article>
+          <article class="policy-card">
+            <div class="policy-card__mini">Team operation</div>
+            <h3>Use shared naming and review rules</h3>
+            <p>Reusable templates work best when teams standardize tag names, export conventions, and handoff steps instead of letting each operator improvise.</p>
+            <p>Project ZIP exports are useful for continuity, but teams should still keep clear version labels and review checkpoints.</p>
+          </article>
+          <article class="policy-card">
+            <div class="policy-card__mini">Quality control</div>
+            <h3>Confirm the final PDF before delivery</h3>
+            <p>Always open exported PDFs and visually confirm names, dates, amounts, page order, and line breaks after the final edit.</p>
+            <p>When the job matters externally, treat the checklist and a visual final review as part of the standard workflow, not an optional step.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="mistakes-title">
+      <div class="container">
+        <div class="section-header text-center">
+          <div class="eyebrow">Common Mistakes</div>
+          <h2 id="mistakes-title">Frequent mistakes in template-based PDF workflows</h2>
+          <p>Pages that help people avoid bad output tend to be more useful than pages that only describe product benefits. These are common failure points to watch for.</p>
+        </div>
+        <div class="mistake-grid">
+          <article class="mistake-card">
+            <h3>Inconsistent tag naming</h3>
+            <p>Teams often create multiple tags for the same business value, such as `client_name`, `client`, and `customer`, which breaks the idea of one edit updating everything.</p>
+            <span class="mistake-card__fix">Fix: define one naming rule before building reusable templates.</span>
+          </article>
+          <article class="mistake-card">
+            <h3>Reusing old bundles without review</h3>
+            <p>A previous project ZIP may still contain outdated pages, legacy values, or attachments that no longer belong in the current delivery.</p>
+            <span class="mistake-card__fix">Fix: review source pages and supporting files at the start of every cycle.</span>
+          </article>
+          <article class="mistake-card">
+            <h3>Skipping final visual checks</h3>
+            <p>Even when data is correct, line breaks, page order, and spacing can still create a poor submission or client-facing output if no one opens the exported PDF.</p>
+            <span class="mistake-card__fix">Fix: add a final open-and-check step before delivery or archive.</span>
+          </article>
         </div>
       </div>
     </section>
