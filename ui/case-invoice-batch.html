@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>事例: 請求処理の一括作成 | PDF Input Studio</title>
+    <meta name="description" content="複数取引先向け請求PDFを効率的に作成する運用事例。ページ構成の維持とタグ更新の手順を解説します。" />
+    <meta name="robots" content="index,follow" />
+    <link rel="canonical" href="https://pdf-input-studio.kanazawa-application-support.jp/case-invoice-batch.html" />
+    <style>
+      :root { --bg:#f8f7ff; --card:#ffffff; --text:#1f2330; --muted:#5b6477; --line:#dfe3ef; --accent:#7c5cff; }
+      * { box-sizing: border-box; }
+      body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif; color:var(--text); background:var(--bg); }
+      .wrap { max-width: 980px; margin:0 auto; padding:24px 16px 44px; }
+      .home { display:inline-block; margin-bottom:14px; color:var(--accent); text-decoration:none; font-weight:700; }
+      .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:22px; box-shadow:0 8px 24px rgba(15,23,42,.06); }
+      h1 { margin:0 0 10px; font-size:30px; } h2 { margin:20px 0 8px; font-size:20px; } p, li { color:var(--muted); line-height:1.75; }
+      ul, ol { margin:8px 0 0 20px; padding:0; }
+      .nav { margin-top:20px; display:flex; flex-wrap:wrap; gap:8px; }
+      .nav a { text-decoration:none; color:var(--text); border:1px solid var(--line); border-radius:999px; padding:7px 12px; background:#fff; font-size:13px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <a class="home" href="/case-studies.html">← 活用事例集へ戻る</a>
+      <article class="card">
+        <h1>事例: 請求処理の一括作成</h1>
+        <p><strong>想定業務:</strong> 月末に複数取引先向けの請求書PDFを短時間で作成する運用。</p>
+
+        <h2>課題</h2>
+        <ul>
+          <li>請求先名・請求日・金額などの差し替え作業が多い</li>
+          <li>添付資料の有無でページ構成が崩れやすい</li>
+          <li>作成者ごとに手順が異なり品質が安定しない</li>
+        </ul>
+
+        <h2>運用手順</h2>
+        <ol>
+          <li>共通テンプレートZIPを起点に案件をコピー</li>
+          <li>取引先ごとにタグ値だけ更新（会社名、請求番号、金額、支払期限）</li>
+          <li>必要資料をPDF追加し、提出順へ並べ替え</li>
+          <li>提出前チェックリストで体裁と金額整合を確認</li>
+          <li>取引先別の完成PDFを出力</li>
+        </ol>
+
+        <h2>効果</h2>
+        <ul>
+          <li>請求書作成の標準化</li>
+          <li>更新漏れと添付ミスの削減</li>
+          <li>月末のピーク作業の平準化</li>
+        </ul>
+
+        <div class="nav">
+          <a href="/document-quality-checklist.html">提出前チェックリスト</a>
+          <a href="/tag-design-rules.html">タグ設計ルール</a>
+          <a href="/beginner-guide.html">使い方ガイド</a>
+          <a href="/updates.html">更新情報</a>
+        </div>
+      </article>
+    </div>
+  </body>
+</html>

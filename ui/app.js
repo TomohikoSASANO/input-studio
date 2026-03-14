@@ -1257,6 +1257,11 @@ function renderGate() {
           <a class="gateTrustNav__link" href="/solutions.html">${escapeHtml(tr("top.nav.guide", "活用ガイド"))}</a>
           <a class="gateTrustNav__link" href="/application-form-filling.html">${escapeHtml(tr("top.nav.forms", "申請書/様式入力"))}</a>
           <a class="gateTrustNav__link" href="/pdf-merge-split.html">${escapeHtml(tr("top.nav.tools", "PDF結合/分割"))}</a>
+          <a class="gateTrustNav__link" href="/beginner-guide.html">${escapeHtml(tr("top.nav.guideFull", "使い方ガイド"))}</a>
+          <a class="gateTrustNav__link" href="/updates.html">${escapeHtml(tr("top.nav.updates", "更新情報"))}</a>
+          <a class="gateTrustNav__link" href="/case-studies.html">${escapeHtml(tr("top.nav.cases", "活用事例"))}</a>
+          <a class="gateTrustNav__link" href="/document-quality-checklist.html">${escapeHtml(tr("top.nav.checklist", "提出前チェックリスト"))}</a>
+          <a class="gateTrustNav__link" href="/tag-design-rules.html">${escapeHtml(tr("top.nav.tagrules", "タグ設計ルール"))}</a>
           <a class="gateTrustNav__link" href="/template-builder.html">${escapeHtml(tr("top.nav.templateBuilder", "Template Builder (EN)"))}</a>
           <a class="gateTrustNav__link" href="/pricing.html">${escapeHtml(tr("top.nav.pricing", "料金"))}</a>
           <a class="gateTrustNav__link" href="/about.html">${escapeHtml(tr("top.nav.about", "企業情報"))}</a>

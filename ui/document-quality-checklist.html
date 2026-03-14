@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>提出前チェックリスト | PDF Input Studio</title>
+    <meta name="description" content="申請書・様式・帳票の提出前に確認すべき実務チェックリスト。入力ミス、ページ順、差し戻しを減らす確認手順をまとめています。" />
+    <meta name="keywords" content="提出前チェックリスト,申請書チェック,帳票チェック,PDF入力ミス防止,様式確認,差し戻し防止" />
+    <meta name="robots" content="index,follow" />
+    <link rel="canonical" href="https://pdf-input-studio.kanazawa-application-support.jp/document-quality-checklist.html" />
+    <style>
+      :root { --bg:#f8f7ff; --card:#ffffff; --text:#1f2330; --muted:#5b6477; --line:#dfe3ef; --accent:#7c5cff; --ok:#0f766e; }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", sans-serif; color: var(--text); background: var(--bg); }
+      .wrap { max-width: 980px; margin: 0 auto; padding: 24px 16px 44px; }
+      .home { display: inline-block; margin-bottom: 14px; color: var(--accent); text-decoration: none; font-weight: 700; }
+      .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 22px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06); }
+      h1 { margin: 0 0 10px; font-size: 30px; }
+      h2 { margin: 20px 0 8px; font-size: 20px; }
+      h3 { margin: 14px 0 6px; font-size: 16px; }
+      p, li { color: var(--muted); line-height: 1.75; }
+      ul { margin: 8px 0 0 20px; padding: 0; }
+      .check { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: #fff; margin-top: 10px; }
+      .check strong { color: var(--text); }
+      .ok { color: var(--ok); font-weight: 700; }
+      .nav { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 8px; }
+      .nav a { text-decoration: none; color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; background: #fff; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <a class="home" href="/">← PDF Input Studio トップへ戻る</a>
+      <article class="card">
+        <h1>提出前チェックリスト（実務向け）</h1>
+        <p>このページは、申請書・様式・帳票を提出する直前に確認すべき項目をまとめた実務用チェックリストです。差し戻しを減らし、提出品質を安定させるために利用できます。</p>
+
+        <h2>1. 入力内容チェック</h2>
+        <div class="check">
+          <strong>必須項目の空欄確認</strong>
+          <ul>
+            <li>氏名・住所・会社名・連絡先などの必須欄に空欄がないか</li>
+            <li>日付形式（和暦/西暦）や桁数（電話番号・郵便番号）が要件どおりか</li>
+            <li>金額欄のカンマ、単位、税込/税抜の整合が取れているか</li>
+          </ul>
+        </div>
+        <div class="check">
+          <strong>同名タグの同期確認</strong>
+          <ul>
+            <li>同じ意味の項目がページごとに別値になっていないか</li>
+            <li>タグ名の表記ゆれ（例: client_name / clientName）を起こしていないか</li>
+          </ul>
+        </div>
+
+        <h2>2. 書類構成チェック</h2>
+        <div class="check">
+          <strong>ページ順・添付順</strong>
+          <ul>
+            <li>提出先指定の順番どおりにページが並んでいるか</li>
+            <li>不要ページの削除漏れがないか</li>
+            <li>追加したPDF（添付資料）が正しい案件のものか</li>
+          </ul>
+        </div>
+        <div class="check">
+          <strong>分割・結合後の整合性</strong>
+          <ul>
+            <li>結合後にページ番号参照の不整合が出ていないか</li>
+            <li>分割後に必要ページの欠落がないか</li>
+          </ul>
+        </div>
+
+        <h2>3. 提出直前の最終確認</h2>
+        <div class="check">
+          <strong>読み合わせ</strong>
+          <ul>
+            <li>完成PDFを提出形式で1回通読する</li>
+            <li>押印欄・署名欄・添付欄の有無を確認する</li>
+            <li>ファイル名ルール（提出先指定）に従っているか</li>
+          </ul>
+        </div>
+        <div class="check">
+          <strong>再利用準備</strong>
+          <ul>
+            <li>提出版とは別にプロジェクトZIPを保存しておく</li>
+            <li>次回使い回しのため、タグ設計を最終整理しておく</li>
+          </ul>
+        </div>
+
+        <h2>4. 運用ルール（推奨）</h2>
+        <ul>
+          <li>「作成者チェック」→「レビュアチェック」の2段階で確認する</li>
+          <li>チェック済み項目を毎回記録する（再発防止）</li>
+          <li>差し戻し理由をテンプレ化して次回手順へ反映する</li>
+        </ul>
+
+        <p><span class="ok">最終更新日:</span> 2026-03-11</p>
+
+        <div class="nav">
+          <a href="/tag-design-rules.html">タグ設計ルール</a>
+          <a href="/beginner-guide.html">使い方ガイド</a>
+          <a href="/updates.html">更新情報</a>
+          <a href="/pricing.html">料金</a>
+          <a href="/about.html">企業情報</a>
+          <a href="/contact.html">お問い合わせ</a>
+          <a href="/privacy.html">プライバシーポリシー</a>
+          <a href="/terms.html">利用規約</a>
+          <a href="/faq.html">FAQ</a>
+        </div>
+      </article>
+    </div>
+  </body>
+</html>

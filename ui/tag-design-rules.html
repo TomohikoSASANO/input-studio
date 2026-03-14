@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>タグ設計ルール | PDF Input Studio</title>
+    <meta name="description" content="PDF入力業務のためのタグ設計ルール。命名規則、同期設計、保守しやすい構成、よくある失敗例を実務向けに整理しています。" />
+    <meta name="keywords" content="タグ設計,命名規則,PDF入力テンプレート,同期設計,フォーム設計,帳票運用" />
+    <meta name="robots" content="index,follow" />
+    <link rel="canonical" href="https://pdf-input-studio.kanazawa-application-support.jp/tag-design-rules.html" />
+    <style>
+      :root { --bg:#f8f7ff; --card:#ffffff; --text:#1f2330; --muted:#5b6477; --line:#dfe3ef; --accent:#7c5cff; }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", sans-serif; color: var(--text); background: var(--bg); }
+      .wrap { max-width: 980px; margin: 0 auto; padding: 24px 16px 44px; }
+      .home { display: inline-block; margin-bottom: 14px; color: var(--accent); text-decoration: none; font-weight: 700; }
+      .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 22px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06); }
+      h1 { margin: 0 0 10px; font-size: 30px; }
+      h2 { margin: 22px 0 8px; font-size: 20px; }
+      p, li { color: var(--muted); line-height: 1.75; }
+      ul { margin: 8px 0 0 20px; padding: 0; }
+      table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+      th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; font-size: 14px; }
+      th { background: #f7f4ff; color: var(--text); }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; background: #f7f4ff; border: 1px solid #e8e2ff; border-radius: 6px; padding: 1px 6px; }
+      .note { margin-top: 10px; border-left: 3px solid var(--accent); background: #f6f2ff; padding: 10px 12px; border-radius: 8px; }
+      .nav { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 8px; }
+      .nav a { text-decoration: none; color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; background: #fff; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <a class="home" href="/">← PDF Input Studio トップへ戻る</a>
+      <article class="card">
+        <h1>タグ設計ルール（再利用しやすい運用）</h1>
+        <p>タグ設計を最初に整えると、後工程の修正コストが大きく下がります。このページでは、実務で使える命名ルールと失敗しない同期設計をまとめます。</p>
+
+        <h2>1. 命名の基本ルール</h2>
+        <ul>
+          <li>英小文字 + アンダースコアで統一（例: <code>client_name</code>）</li>
+          <li>意味単位を明確にする（<code>name</code> だけでなく <code>applicant_name</code>）</li>
+          <li>同じ意味なら同じタグ名を使い回す</li>
+        </ul>
+
+        <h2>2. 推奨タグ一覧（例）</h2>
+        <table>
+          <tr><th>用途</th><th>推奨タグ</th><th>メモ</th></tr>
+          <tr><td>申請者名</td><td><code>applicant_name</code></td><td>帳票をまたいで共通化しやすい</td></tr>
+          <tr><td>住所</td><td><code>applicant_address</code></td><td>都道府県/市区町村分割時はサフィックス追加</td></tr>
+          <tr><td>提出日</td><td><code>submission_date</code></td><td>表示形式は出力前に統一確認</td></tr>
+          <tr><td>案件番号</td><td><code>case_id</code></td><td>外部システム連携時に有効</td></tr>
+          <tr><td>金額</td><td><code>amount_total</code></td><td>税込/税抜は別タグで管理</td></tr>
+        </table>
+
+        <h2>3. 失敗しやすいパターン</h2>
+        <ul>
+          <li><code>clientName</code> と <code>client_name</code> が混在して同期が切れる</li>
+          <li><code>name_1</code>, <code>name_2</code> のように意味のない連番で保守不能になる</li>
+          <li>帳票ごとに微妙に違うタグ名を作って再利用性が落ちる</li>
+        </ul>
+
+        <h2>4. 保守しやすい設計手順</h2>
+        <ol>
+          <li>最初に共通項目（氏名/住所/日付/案件番号）だけタグ辞書を決める</li>
+          <li>ページ配置後に同名タグ同期を確認する</li>
+          <li>提出前チェックで表記ゆれを検出して辞書を更新する</li>
+          <li>完成したタグ辞書をZIP運用に含める</li>
+        </ol>
+
+        <div class="note">
+          <strong>運用メモ:</strong> タグ設計ルールは「使う人が増えるほど効きます」。担当者ごとの癖を吸収するため、チーム共通ルールとして固定するのが最も効果的です。
+        </div>
+
+        <p><strong>最終更新日:</strong> 2026-03-11</p>
+
+        <div class="nav">
+          <a href="/document-quality-checklist.html">提出前チェックリスト</a>
+          <a href="/beginner-guide.html">使い方ガイド</a>
+          <a href="/updates.html">更新情報</a>
+          <a href="/pricing.html">料金</a>
+          <a href="/about.html">企業情報</a>
+          <a href="/contact.html">お問い合わせ</a>
+          <a href="/privacy.html">プライバシーポリシー</a>
+          <a href="/terms.html">利用規約</a>
+          <a href="/faq.html">FAQ</a>
+        </div>
+      </article>
+    </div>
+  </body>
+</html>

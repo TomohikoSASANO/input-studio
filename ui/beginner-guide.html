@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>使い方ガイド | PDF Input Studio</title>
+    <meta name="description" content="PDF Input Studioの使い方を、初回準備からタグ運用・PDF結合/分割・ZIP再利用まで実務目線で解説します。" />
+    <style>
+      :root { --bg:#f8f7ff; --card:#ffffff; --text:#1f2330; --muted:#5b6477; --line:#dfe3ef; --accent:#7c5cff; }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", sans-serif; color: var(--text); background: var(--bg); }
+      .wrap { max-width: 980px; margin: 0 auto; padding: 24px 16px 44px; }
+      .home { display: inline-block; margin-bottom: 14px; color: var(--accent); text-decoration: none; font-weight: 700; }
+      .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 22px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06); }
+      h1 { margin: 0 0 10px; font-size: 30px; }
+      h2 { margin: 24px 0 8px; font-size: 20px; }
+      h3 { margin: 16px 0 6px; font-size: 16px; }
+      p, li { color: var(--muted); line-height: 1.75; }
+      ul, ol { margin: 8px 0 0 20px; padding: 0; }
+      .toc { background: #faf9ff; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+      .toc a { color: var(--accent); text-decoration: none; }
+      .toc a:hover { text-decoration: underline; }
+      .tips { margin-top: 10px; padding: 10px 12px; border-left: 3px solid var(--accent); background: #f5f2ff; border-radius: 8px; }
+      .nav { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 8px; }
+      .nav a { text-decoration: none; color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; background: #fff; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <a class="home" href="/">← PDF Input Studio トップへ戻る</a>
+      <article class="card">
+        <h1>使い方ガイド（実務向け）</h1>
+        <p>
+          このページは、PDF Input Studioを初めて使う方向けの実務ガイドです。単なる機能説明ではなく、
+          「どの順番で作業するとミスが少ないか」を重視してまとめています。
+        </p>
+
+        <div class="toc">
+          <strong>目次</strong>
+          <ol>
+            <li><a href="#start">最初の準備</a></li>
+            <li><a href="#tags">タグ運用の基本</a></li>
+            <li><a href="#pdfops">PDF結合/分割/並べ替え</a></li>
+            <li><a href="#zip">プロジェクトZIPの活用</a></li>
+            <li><a href="#quality">品質チェック手順</a></li>
+            <li><a href="#trouble">よくあるトラブルと対処</a></li>
+          </ol>
+        </div>
+
+        <h2 id="start">1. 最初の準備</h2>
+        <ol>
+          <li>「PDFを読み込む」または「プロジェクトZIPを開く」を選択します。</li>
+          <li>再利用案件ならZIPを優先し、新規案件はPDFから開始します。</li>
+          <li>最初にページ順を確認し、必要なら先に並べ替えを行います。</li>
+        </ol>
+        <div class="tips">
+          <strong>ポイント:</strong> 入力前にページ構成を固めると、後工程でのタグ再配置が減ります。
+        </div>
+
+        <h2 id="tags">2. タグ運用の基本</h2>
+        <h3>2-1. タグ名のルール</h3>
+        <ul>
+          <li>意味が分かる英数字（例: <code>client_name</code>, <code>submission_date</code>）を使います。</li>
+          <li>同じ意味の項目は同じタグ名に統一します。</li>
+          <li>帳票ごとの枝番を乱用せず、共通化できる箇所を優先します。</li>
+        </ul>
+        <h3>2-2. 値入力の流れ</h3>
+        <ol>
+          <li>代表ページでタグを配置します。</li>
+          <li>タグ一覧から同名タグを呼び出し、値を一括編集します。</li>
+          <li>ページ移動しながら見た目のズレを最終調整します。</li>
+        </ol>
+
+        <h2 id="pdfops">3. PDF結合/分割/並べ替え</h2>
+        <ul>
+          <li><strong>結合:</strong> 添付資料や別紙を同一案件にまとめる場合に使用。</li>
+          <li><strong>分割:</strong> 提出先が異なる書類を切り出す場合に使用。</li>
+          <li><strong>並べ替え:</strong> 提出順や社内レビュー順に合わせる場合に使用。</li>
+        </ul>
+        <div class="tips">
+          <strong>実務推奨順:</strong> 「結合/分割」→「並べ替え」→「タグ配置」→「最終出力」
+        </div>
+
+        <h2 id="zip">4. プロジェクトZIPの活用</h2>
+        <p>
+          ZIP保存は、テンプレート・入力状態・ページ構成をまとめて再利用するための機能です。
+          翌月/翌案件の更新では、ZIPを開いて値だけ差し替える運用が最も効率的です。
+        </p>
+        <ul>
+          <li>案件完了時: ZIP保存 + 完成PDFダウンロード</li>
+          <li>再開時: ZIP読込 → 値更新 → 再出力</li>
+        </ul>
+
+        <h2 id="quality">5. 品質チェック手順</h2>
+        <ol>
+          <li>タグ未入力の有無をチェック</li>
+          <li>日付・金額・氏名の表記ゆれ確認</li>
+          <li>ページ順・ページ欠落の確認</li>
+          <li>最終PDFを提出前に1回通読</li>
+        </ol>
+
+        <h2 id="trouble">6. よくあるトラブルと対処</h2>
+        <ul>
+          <li>表示が古い: ブラウザを再読込（Ctrl+F5）</li>
+          <li>広告が見えない: 広告ブロッカーや審査状態を確認</li>
+          <li>大容量ファイルが重い: 先に分割し、必要部分だけ編集</li>
+          <li>同名タグが同期しない: タグ名のスペル・記号を再確認</li>
+        </ul>
+
+        <p><strong>最終更新日:</strong> 2026-03-11</p>
+
+        <div class="nav">
+          <a href="/case-studies.html">活用事例集</a>
+          <a href="/case-application-monthly.html">事例: 申請書月次更新</a>
+          <a href="/updates.html">更新情報</a>
+          <a href="/document-quality-checklist.html">提出前チェックリスト</a>
+          <a href="/tag-design-rules.html">タグ設計ルール</a>
+          <a href="/template-builder.html">Template Builder (EN)</a>
+          <a href="/pricing.html">料金</a>
+          <a href="/about.html">企業情報</a>
+          <a href="/contact.html">お問い合わせ</a>
+          <a href="/privacy.html">プライバシーポリシー</a>
+          <a href="/terms.html">利用規約</a>
+          <a href="/faq.html">FAQ</a>
+        </div>
+      </article>
+    </div>
+  </body>
+</html>

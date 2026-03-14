@@ -988,6 +988,14 @@ async def sitemap_xml():
         "/template-builder.html",
         "/template-automation.html",
         "/pdf-template-workflow.html",
+        "/beginner-guide.html",
+        "/updates.html",
+        "/document-quality-checklist.html",
+        "/tag-design-rules.html",
+        "/case-studies.html",
+        "/case-application-monthly.html",
+        "/case-invoice-batch.html",
+        "/case-team-handoff.html",
     ]
     pages: list[tuple[str, str]] = []
     for path in page_paths:
