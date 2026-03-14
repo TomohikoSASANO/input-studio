@@ -86,6 +86,7 @@ _CASE_DYNAMIC_LOCALES = [loc for loc in _SEO_LOCALES if loc not in _CASE_STATIC_
 _LP_STATIC_LOCALES = {"en"}
 _LP_DYNAMIC_LOCALES = [loc for loc in _SEO_LOCALES if loc not in _LP_STATIC_LOCALES]
 _LOCALE_CACHE: dict[str, dict[str, str]] = {}
+_LANG_SYNC_TAG = '<script defer src="/lang-sync.js"></script>'
 
 
 def _client_ip(request: Request) -> str:
@@ -132,6 +133,22 @@ def _iso_mtime(path: Path) -> str:
     except Exception:
         dt = datetime.now(timezone.utc)
     return dt.strftime("%Y-%m-%d")
+
+
+def _inject_lang_sync(html_text: str) -> str:
+    """Inject lang-sync script into HTML once."""
+    text = str(html_text or "")
+    if "/lang-sync.js" in text:
+        return text
+    lower = text.lower()
+    idx = lower.rfind("</body>")
+    if idx >= 0:
+        return text[:idx] + _LANG_SYNC_TAG + "\n" + text[idx:]
+    return text + "\n" + _LANG_SYNC_TAG + "\n"
+
+
+def _html_response(body: str) -> Response:
+    return Response(content=_inject_lang_sync(body), media_type="text/html")
 
 
 def _locale_text(loc: str, key: str, fallback: str) -> str:
@@ -608,7 +625,10 @@ async def root():
     ui_dir = ROOT / "ui"
     index_path = ui_dir / "index.html"
     if index_path.exists():
-        return FileResponse(str(index_path), media_type="text/html")
+        try:
+            return _html_response(index_path.read_text(encoding="utf-8"))
+        except Exception:
+            return FileResponse(str(index_path), media_type="text/html")
     return {"message": "PDF Template Builder Web API - UI not found"}
 
 
@@ -1360,6 +1380,82 @@ async def ad_config_js():
     return response
 
 
+@app.get("/lang-sync.js")
+async def lang_sync_js():
+    """Keep selected language across internal page navigation."""
+    js = r"""
+(function () {
+  var SUPPORTED = new Set(["ja","en","zh","hi","es","fr","ar","pt","ru","bn","id","ur","de","it","tr","vi","ko","fa","th","pl","uk","nl"]);
+  var KEY = "inputstudio-locale";
+  var current = "ja";
+
+  try {
+    var q = new URLSearchParams(window.location.search || "");
+    var fromQuery = String(q.get("lang") || "").toLowerCase().trim();
+    if (SUPPORTED.has(fromQuery)) {
+      current = fromQuery;
+      localStorage.setItem(KEY, current);
+    } else {
+      var fromStorage = String(localStorage.getItem(KEY) || "").toLowerCase().trim();
+      if (SUPPORTED.has(fromStorage)) {
+        current = fromStorage;
+      } else {
+        var fromHtmlLang = String(document.documentElement.lang || "").toLowerCase().trim();
+        if (SUPPORTED.has(fromHtmlLang)) current = fromHtmlLang;
+      }
+    }
+  } catch (e) {}
+
+  try { document.documentElement.lang = current; } catch (e) {}
+
+  function mappedPath(pathname, lang) {
+    var p = String(pathname || "");
+    var maps = [
+      [/^\/case-studies(?:-(?:ja|en|zh|hi|es|fr|ar|pt|ru|bn|id|ur|de|it|tr|vi|ko|fa|th|pl|uk|nl))?\.html$/i, "/case-studies-" + lang + ".html"],
+      [/^\/case-application-monthly(?:-(?:ja|en|zh|hi|es|fr|ar|pt|ru|bn|id|ur|de|it|tr|vi|ko|fa|th|pl|uk|nl))?\.html$/i, "/case-application-monthly-" + lang + ".html"],
+      [/^\/case-invoice-batch(?:-(?:ja|en|zh|hi|es|fr|ar|pt|ru|bn|id|ur|de|it|tr|vi|ko|fa|th|pl|uk|nl))?\.html$/i, "/case-invoice-batch-" + lang + ".html"],
+      [/^\/case-team-handoff(?:-(?:ja|en|zh|hi|es|fr|ar|pt|ru|bn|id|ur|de|it|tr|vi|ko|fa|th|pl|uk|nl))?\.html$/i, "/case-team-handoff-" + lang + ".html"],
+      [/^\/template-automation(?:-(?:ja|en|zh|hi|es|fr|ar|pt|ru|bn|id|ur|de|it|tr|vi|ko|fa|th|pl|uk|nl))?\.html$/i, "/template-automation-" + lang + ".html"],
+      [/^\/pdf-template-workflow(?:-(?:ja|en|zh|hi|es|fr|ar|pt|ru|bn|id|ur|de|it|tr|vi|ko|fa|th|pl|uk|nl))?\.html$/i, "/pdf-template-workflow-" + lang + ".html"]
+    ];
+    for (var i = 0; i < maps.length; i += 1) {
+      if (maps[i][0].test(p)) return maps[i][1];
+    }
+    return p;
+  }
+
+  function rewrite(anchor) {
+    if (!anchor || !anchor.getAttribute) return;
+    var raw = anchor.getAttribute("href");
+    if (!raw) return;
+    if (raw[0] === "#" || raw.indexOf("mailto:") === 0 || raw.indexOf("tel:") === 0 || raw.indexOf("javascript:") === 0) return;
+    var url;
+    try { url = new URL(raw, window.location.href); } catch (e) { return; }
+    if (url.origin !== window.location.origin) return;
+    var explicitLang = String(url.searchParams.get("lang") || "").toLowerCase().trim();
+    var hasExplicitLang = SUPPORTED.has(explicitLang);
+    var targetLang = hasExplicitLang ? explicitLang : current;
+    url.pathname = mappedPath(url.pathname, targetLang);
+    if (url.pathname === "/") {
+      if (!hasExplicitLang) url.searchParams.set("lang", targetLang);
+    } else if (url.pathname.endsWith(".html")) {
+      if (!hasExplicitLang) url.searchParams.set("lang", targetLang);
+    }
+    var out = url.pathname + (url.search || "") + (url.hash || "");
+    anchor.setAttribute("href", out);
+  }
+
+  var links = document.querySelectorAll("a[href]");
+  for (var i = 0; i < links.length; i += 1) rewrite(links[i]);
+})();
+"""
+    response = Response(content=js, media_type="application/javascript")
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
 @app.get("/robots.txt")
 async def robots_txt():
     body = (
@@ -1400,8 +1496,11 @@ async def case_studies_by_lang(lang: str):
     if code in _CASE_STATIC_LOCALES:
         fp = ui_dir / _case_static_file("hub", code)
         if fp.exists():
-            return FileResponse(str(fp), media_type="text/html")
-    return Response(content=_render_case_hub_html(code), media_type="text/html")
+            try:
+                return _html_response(fp.read_text(encoding="utf-8"))
+            except Exception:
+                return FileResponse(str(fp), media_type="text/html")
+    return _html_response(_render_case_hub_html(code))
 
 
 @app.get("/case-application-monthly-{lang}.html")
@@ -1412,8 +1511,11 @@ async def case_application_monthly_by_lang(lang: str):
     if code in _CASE_STATIC_LOCALES:
         fp = ui_dir / _case_static_file("application-monthly", code)
         if fp.exists():
-            return FileResponse(str(fp), media_type="text/html")
-    return Response(content=_render_case_detail_html(code, "application-monthly"), media_type="text/html")
+            try:
+                return _html_response(fp.read_text(encoding="utf-8"))
+            except Exception:
+                return FileResponse(str(fp), media_type="text/html")
+    return _html_response(_render_case_detail_html(code, "application-monthly"))
 
 
 @app.get("/case-invoice-batch-{lang}.html")
@@ -1424,8 +1526,11 @@ async def case_invoice_batch_by_lang(lang: str):
     if code in _CASE_STATIC_LOCALES:
         fp = ui_dir / _case_static_file("invoice-batch", code)
         if fp.exists():
-            return FileResponse(str(fp), media_type="text/html")
-    return Response(content=_render_case_detail_html(code, "invoice-batch"), media_type="text/html")
+            try:
+                return _html_response(fp.read_text(encoding="utf-8"))
+            except Exception:
+                return FileResponse(str(fp), media_type="text/html")
+    return _html_response(_render_case_detail_html(code, "invoice-batch"))
 
 
 @app.get("/case-team-handoff-{lang}.html")
@@ -1436,8 +1541,11 @@ async def case_team_handoff_by_lang(lang: str):
     if code in _CASE_STATIC_LOCALES:
         fp = ui_dir / _case_static_file("team-handoff", code)
         if fp.exists():
-            return FileResponse(str(fp), media_type="text/html")
-    return Response(content=_render_case_detail_html(code, "team-handoff"), media_type="text/html")
+            try:
+                return _html_response(fp.read_text(encoding="utf-8"))
+            except Exception:
+                return FileResponse(str(fp), media_type="text/html")
+    return _html_response(_render_case_detail_html(code, "team-handoff"))
 
 
 @app.get("/template-automation-{lang}.html")
@@ -1448,8 +1556,11 @@ async def template_automation_by_lang(lang: str):
     if code in _LP_STATIC_LOCALES:
         fp = ui_dir / _lp_static_file("template-automation", code)
         if fp.exists():
-            return FileResponse(str(fp), media_type="text/html")
-    return Response(content=_render_template_automation_html(code), media_type="text/html")
+            try:
+                return _html_response(fp.read_text(encoding="utf-8"))
+            except Exception:
+                return FileResponse(str(fp), media_type="text/html")
+    return _html_response(_render_template_automation_html(code))
 
 
 @app.get("/pdf-template-workflow-{lang}.html")
@@ -1460,8 +1571,11 @@ async def pdf_template_workflow_by_lang(lang: str):
     if code in _LP_STATIC_LOCALES:
         fp = ui_dir / _lp_static_file("pdf-template-workflow", code)
         if fp.exists():
-            return FileResponse(str(fp), media_type="text/html")
-    return Response(content=_render_template_workflow_html(code), media_type="text/html")
+            try:
+                return _html_response(fp.read_text(encoding="utf-8"))
+            except Exception:
+                return FileResponse(str(fp), media_type="text/html")
+    return _html_response(_render_template_workflow_html(code))
 
 
 @app.get("/sitemap.xml")
@@ -1573,7 +1687,10 @@ if ui_dir.exists():
         if file_path == "" or file_path == "index.html":
             index_path = ui_dir / "index.html"
             if index_path.exists():
-                return FileResponse(str(index_path), media_type="text/html")
+                try:
+                    return _html_response(index_path.read_text(encoding="utf-8"))
+                except Exception:
+                    return FileResponse(str(index_path), media_type="text/html")
             raise HTTPException(status_code=404, detail="index.html not found")
         
         # Serve other static files
@@ -1597,7 +1714,11 @@ if ui_dir.exists():
             }
             ext = full_path.suffix.lower()
             media_type = media_types.get(ext, "application/octet-stream")
-            
+            if ext == ".html":
+                try:
+                    return _html_response(full_path.read_text(encoding="utf-8"))
+                except Exception:
+                    return FileResponse(str(full_path), media_type=media_type)
             return FileResponse(str(full_path), media_type=media_type)
         
         raise HTTPException(status_code=404, detail="File not found")
