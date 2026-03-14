@@ -45,9 +45,15 @@
   "top.howto.step3": "3. PDF را دانلود / پروژه را ذخیره کنید",
   "top.language": "زبان",
   "top.languageMixed": "زبان Language",
+  "top.nav.guideFull": "راهنمای استفاده",
+  "top.nav.updates": "به‌روزرسانی‌ها",
+  "top.nav.cases": "مطالعات موردی",
+  "top.nav.checklist": "چک‌لیست پیش از ارسال",
+  "top.nav.tagrules": "قوانین طراحی برچسب",
   "error.rateLimited": "درخواست‌ها بیش از حد است. لطفاً کمی بعد دوباره تلاش کنید.",
   "error.uploadTooLarge": "فایل آپلودی خیلی بزرگ است. اندازه را کم کرده و دوباره تلاش کنید.",
   "error.serverBusy": "سرور شلوغ است. کمی بعد دوباره تلاش کنید.",
   "error.invalidOrder": "ترتیب صفحات نامعتبر است. دوباره مرتب کنید.",
-  "error.methodNotAllowed": "خطای اتصال. سرور را ری‌استارت کرده و دوباره تلاش کنید."
+  "error.methodNotAllowed": "خطای اتصال. سرور را ری‌استارت کرده و دوباره تلاش کنید.",
+  "ad.unlock.badge": "مشاهده و ادامه"
 }

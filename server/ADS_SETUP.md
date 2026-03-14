@@ -17,12 +17,14 @@ FastAPI を起動する環境で以下を設定してください。
 ```bash
 INPUTSTUDIO_ADS_ENABLED=1
 INPUTSTUDIO_AD_PROVIDER=adsense
-INPUTSTUDIO_ADSENSE_CLIENT=ca-pub-XXXXXXXXXXXXXXXX
-INPUTSTUDIO_AD_SLOT_GATE=1234567890
-INPUTSTUDIO_AD_SLOT_PANEL=2345678901
-INPUTSTUDIO_AD_SLOT_PANEL_BOTTOM=3456789012
-INPUTSTUDIO_AD_SLOT_UNLOCK=4567890123
+INPUTSTUDIO_ADSENSE_CLIENT=ca-pub-3765496771126537
+INPUTSTUDIO_AD_SLOT_GATE=7232552638
+INPUTSTUDIO_AD_SLOT_PANEL=9667144285
+INPUTSTUDIO_AD_SLOT_PANEL_BOTTOM=4315074822
+INPUTSTUDIO_AD_SLOT_UNLOCK=6857002329
 INPUTSTUDIO_UNLOCK_AD_SECONDS=3
+# Optional: custom ads.txt line (if omitted, generated from INPUTSTUDIO_ADSENSE_CLIENT)
+# INPUTSTUDIO_ADS_TXT_LINE=google.com, pub-3765496771126537, DIRECT, f08c47fec0942fa0
 ```
 
 `INPUTSTUDIO_ADS_ENABLED=0` にすると広告配信を即停止できます。
@@ -31,6 +33,8 @@ INPUTSTUDIO_UNLOCK_AD_SECONDS=3
 
 - `https://<your-domain>/ad-config.js` を開く
   - `window.__INPUTSTUDIO_AD_CONFIG__` に設定値が出ること
+- `https://<your-domain>/ads.txt` を開く
+  - `google.com, pub-..., DIRECT, f08c47fec0942fa0` が出ること
 - トップ画面とメイン画面左パネルに広告が表示されること
 - ZIPオープン / PDF追加時の機能解放モーダル内に広告が表示されること
 
@@ -48,3 +52,9 @@ INPUTSTUDIO_UNLOCK_AD_SECONDS=3
 - 広告ブロッカー有効時は表示されないことがあります（仕様）
 - AdSense 側ポリシーにより広告が出るまで時間差が出る場合があります
 - クリック誘導文言（「ここをクリックして」等）はポリシー違反になるため禁止
+
+## 6) まとめて反映する場合
+
+HTTPS化と広告本番反映を一気に進める場合は、以下の運用手順を参照してください。
+
+- `server/deploy/PRODUCTION_HTTPS_ADS_ROLLOUT.md`

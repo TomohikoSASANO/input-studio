@@ -44,9 +44,15 @@
   "top.howto.step3": "3. PDF ডাউনলোড / প্রজেক্ট সংরক্ষণ করুন",
   "top.language": "ভাষা",
   "top.languageMixed": "ভাষা Language",
+  "top.nav.guideFull": "ব্যবহার নির্দেশিকা",
+  "top.nav.updates": "আপডেট",
+  "top.nav.cases": "ব্যবহার উদাহরণ",
+  "top.nav.checklist": "জমা দেওয়ার আগে চেকলিস্ট",
+  "top.nav.tagrules": "ট্যাগ ডিজাইন নিয়ম",
   "error.rateLimited": "অনেক বেশি রিকোয়েস্ট। কিছুক্ষণ পর আবার চেষ্টা করুন।",
   "error.uploadTooLarge": "আপলোড ফাইল খুব বড়। সাইজ কমিয়ে আবার চেষ্টা করুন।",
   "error.serverBusy": "সার্ভার ব্যস্ত। কিছুক্ষণ পর আবার চেষ্টা করুন।",
   "error.invalidOrder": "পৃষ্ঠা ক্রমের ডেটা সঠিক নয়। আবার সাজান।",
-  "error.methodNotAllowed": "সংযোগ ত্রুটি। সার্ভার রিস্টার্ট করে আবার চেষ্টা করুন।"
+  "error.methodNotAllowed": "সংযোগ ত্রুটি। সার্ভার রিস্টার্ট করে আবার চেষ্টা করুন।",
+  "ad.unlock.badge": "দেখুন ও চালিয়ে যান"
 }

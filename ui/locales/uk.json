@@ -45,9 +45,15 @@
   "top.howto.step3": "3. Завантажте PDF / збережіть проєкт",
   "top.language": "Мова",
   "top.languageMixed": "Мова Language",
+  "top.nav.guideFull": "Повний посібник",
+  "top.nav.updates": "Оновлення",
+  "top.nav.cases": "Приклади використання",
+  "top.nav.checklist": "Чеклист перед поданням",
+  "top.nav.tagrules": "Правила дизайну тегів",
   "error.rateLimited": "Забагато запитів. Спробуйте трохи пізніше.",
   "error.uploadTooLarge": "Файл завеликий. Зменште розмір і спробуйте ще раз.",
   "error.serverBusy": "Сервер перевантажений. Спробуйте трохи пізніше.",
   "error.invalidOrder": "Некоректний порядок сторінок. Перевпорядкуйте ще раз.",
-  "error.methodNotAllowed": "Помилка з’єднання. Перезапустіть сервер і спробуйте ще раз."
+  "error.methodNotAllowed": "Помилка з’єднання. Перезапустіть сервер і спробуйте ще раз.",
+  "ad.unlock.badge": "Дивитися і продовжити"
 }

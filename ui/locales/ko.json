@@ -45,9 +45,15 @@
   "top.howto.step3": "3. PDF 다운로드 / 프로젝트 저장",
   "top.language": "언어",
   "top.languageMixed": "언어 Language",
+  "top.nav.guideFull": "사용 가이드",
+  "top.nav.updates": "업데이트",
+  "top.nav.cases": "활용 사례",
+  "top.nav.checklist": "제출 전 체크리스트",
+  "top.nav.tagrules": "태그 설계 규칙",
   "error.rateLimited": "요청이 너무 많습니다. 잠시 후 다시 시도하세요.",
   "error.uploadTooLarge": "업로드 파일이 너무 큽니다. 크기를 줄여 다시 시도하세요.",
   "error.serverBusy": "서버가 혼잡합니다. 잠시 후 다시 시도하세요.",
   "error.invalidOrder": "페이지 순서 데이터가 올바르지 않습니다. 다시 정렬하세요.",
-  "error.methodNotAllowed": "연결 오류입니다. 서버를 재시작한 뒤 다시 시도하세요."
+  "error.methodNotAllowed": "연결 오류입니다. 서버를 재시작한 뒤 다시 시도하세요.",
+  "ad.unlock.badge": "시청 후 계속"
 }

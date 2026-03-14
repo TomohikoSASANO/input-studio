@@ -44,9 +44,15 @@
   "top.howto.step3": "3. نزّل PDF / احفظ المشروع",
   "top.language": "اللغة",
   "top.languageMixed": "اللغة Language",
+  "top.nav.guideFull": "دليل الاستخدام",
+  "top.nav.updates": "التحديثات",
+  "top.nav.cases": "حالات الاستخدام",
+  "top.nav.checklist": "قائمة التحقق قبل الإرسال",
+  "top.nav.tagrules": "قواعد تصميم العلامات",
   "error.rateLimited": "طلبات كثيرة جدًا. حاول مرة أخرى بعد قليل.",
   "error.uploadTooLarge": "الملف المرفوع كبير جدًا. قلّل الحجم ثم أعد المحاولة.",
   "error.serverBusy": "الخادم مشغول. حاول مرة أخرى بعد قليل.",
   "error.invalidOrder": "بيانات ترتيب الصفحات غير صالحة. أعد الترتيب مرة أخرى.",
-  "error.methodNotAllowed": "خطأ اتصال. أعد تشغيل الخادم ثم حاول مرة أخرى."
+  "error.methodNotAllowed": "خطأ اتصال. أعد تشغيل الخادم ثم حاول مرة أخرى.",
+  "ad.unlock.badge": "شاهد وتابع"
 }

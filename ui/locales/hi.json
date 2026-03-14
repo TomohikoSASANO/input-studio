@@ -44,9 +44,15 @@
   "top.howto.step3": "3. PDF डाउनलोड / प्रोजेक्ट सेव करें",
   "top.language": "भाषा",
   "top.languageMixed": "भाषा Language",
+  "top.nav.guideFull": "उपयोग गाइड",
+  "top.nav.updates": "अपडेट",
+  "top.nav.cases": "उपयोग उदाहरण",
+  "top.nav.checklist": "सबमिशन से पहले चेकलिस्ट",
+  "top.nav.tagrules": "टैग डिज़ाइन नियम",
   "error.rateLimited": "बहुत अधिक अनुरोध। कृपया थोड़ी देर बाद फिर कोशिश करें।",
   "error.uploadTooLarge": "अपलोड फ़ाइल बहुत बड़ी है। आकार कम करके फिर प्रयास करें।",
   "error.serverBusy": "सर्वर व्यस्त है। कृपया बाद में पुनः प्रयास करें।",
   "error.invalidOrder": "पेज क्रम डेटा अमान्य है। फिर से क्रम बदलें।",
-  "error.methodNotAllowed": "कनेक्शन त्रुटि। सर्वर रीस्टार्ट करके फिर प्रयास करें।"
+  "error.methodNotAllowed": "कनेक्शन त्रुटि। सर्वर रीस्टार्ट करके फिर प्रयास करें।",
+  "ad.unlock.badge": "देखें और जारी रखें"
 }

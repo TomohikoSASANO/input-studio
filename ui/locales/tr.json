@@ -45,9 +45,15 @@
   "top.howto.step3": "3. PDF indir / projeyi kaydet",
   "top.language": "Dil",
   "top.languageMixed": "Dil Language",
+  "top.nav.guideFull": "Kullanım Kılavuzu",
+  "top.nav.updates": "Güncellemeler",
+  "top.nav.cases": "Kullanım örnekleri",
+  "top.nav.checklist": "Gönderim öncesi kontrol listesi",
+  "top.nav.tagrules": "Etiket tasarım kuralları",
   "error.rateLimited": "Çok fazla istek. Lütfen kısa süre sonra tekrar deneyin.",
   "error.uploadTooLarge": "Yüklenen dosya çok büyük. Boyutu küçültüp tekrar deneyin.",
   "error.serverBusy": "Sunucu meşgul. Lütfen kısa süre sonra tekrar deneyin.",
   "error.invalidOrder": "Geçersiz sayfa sırası. Lütfen yeniden sıralayın.",
-  "error.methodNotAllowed": "Bağlantı hatası. Sunucuyu yeniden başlatıp tekrar deneyin."
+  "error.methodNotAllowed": "Bağlantı hatası. Sunucuyu yeniden başlatıp tekrar deneyin.",
+  "ad.unlock.badge": "İzle ve devam et"
 }

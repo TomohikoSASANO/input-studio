@@ -44,9 +44,15 @@
   "top.howto.step3": "3. Скачайте PDF / сохраните проект",
   "top.language": "Язык",
   "top.languageMixed": "Язык Language",
+  "top.nav.guideFull": "Полное руководство",
+  "top.nav.updates": "Обновления",
+  "top.nav.cases": "Кейсы",
+  "top.nav.checklist": "Чек-лист перед отправкой",
+  "top.nav.tagrules": "Правила проектирования тегов",
   "error.rateLimited": "Слишком много запросов. Повторите чуть позже.",
   "error.uploadTooLarge": "Файл слишком большой. Уменьшите размер и повторите.",
   "error.serverBusy": "Сервер перегружен. Повторите чуть позже.",
   "error.invalidOrder": "Неверный порядок страниц. Выполните перестановку заново.",
-  "error.methodNotAllowed": "Ошибка соединения. Перезапустите сервер и попробуйте снова."
+  "error.methodNotAllowed": "Ошибка соединения. Перезапустите сервер и попробуйте снова.",
+  "ad.unlock.badge": "Смотреть и продолжить"
 }

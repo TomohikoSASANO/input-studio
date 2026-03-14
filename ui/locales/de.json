@@ -45,9 +45,15 @@
   "top.howto.step3": "3. PDF herunterladen / Projekt speichern",
   "top.language": "Sprache",
   "top.languageMixed": "Sprache Language",
+  "top.nav.guideFull": "Anleitung",
+  "top.nav.updates": "Updates",
+  "top.nav.cases": "Fallstudien",
+  "top.nav.checklist": "Checkliste vor dem Einreichen",
+  "top.nav.tagrules": "Regeln für Tag-Design",
   "error.rateLimited": "Zu viele Anfragen. Bitte gleich erneut versuchen.",
   "error.uploadTooLarge": "Datei zu groß. Bitte Größe reduzieren und erneut versuchen.",
   "error.serverBusy": "Server ist ausgelastet. Bitte gleich erneut versuchen.",
   "error.invalidOrder": "Ungültige Seitenreihenfolge. Bitte neu anordnen.",
-  "error.methodNotAllowed": "Verbindungsfehler. Server neu starten und erneut versuchen."
+  "error.methodNotAllowed": "Verbindungsfehler. Server neu starten und erneut versuchen.",
+  "ad.unlock.badge": "Ansehen und fortfahren"
 }

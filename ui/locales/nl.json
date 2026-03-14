@@ -45,9 +45,15 @@
   "top.howto.step3": "3. Download PDF / sla project op",
   "top.language": "Taal",
   "top.languageMixed": "Taal Language",
+  "top.nav.guideFull": "Handleiding",
+  "top.nav.updates": "Updates",
+  "top.nav.cases": "Praktijkvoorbeelden",
+  "top.nav.checklist": "Checklist voor indienen",
+  "top.nav.tagrules": "Regels voor tagontwerp",
   "error.rateLimited": "Te veel verzoeken. Probeer het zo opnieuw.",
   "error.uploadTooLarge": "Bestand is te groot. Verklein het en probeer opnieuw.",
   "error.serverBusy": "Server is druk. Probeer het zo opnieuw.",
   "error.invalidOrder": "Ongeldige paginavolgorde. Orden opnieuw.",
-  "error.methodNotAllowed": "Verbindingsfout. Herstart de server en probeer opnieuw."
+  "error.methodNotAllowed": "Verbindingsfout. Herstart de server en probeer opnieuw.",
+  "ad.unlock.badge": "Bekijken en doorgaan"
 }

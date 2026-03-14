@@ -1,0 +1,34 @@
+[Unit]
+Description=Input Studio Web Server
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/inputstudio
+Environment=PYTHONUNBUFFERED=1
+Environment=PORT=8001
+Environment=INPUTSTUDIO_LOCAL_DIR=/var/lib/inputstudio/data
+Environment=INPUTSTUDIO_MAX_UPLOAD_MB=500
+Environment=INPUTSTUDIO_RATE_WINDOW_SEC=60
+Environment=INPUTSTUDIO_RATE_REQUESTS=600
+Environment=INPUTSTUDIO_MAX_HEAVY_CONCURRENCY=6
+Environment=INPUTSTUDIO_HEAVY_WAIT_TIMEOUT_SEC=15
+
+# AdSense (production)
+Environment=INPUTSTUDIO_ADS_ENABLED=1
+Environment=INPUTSTUDIO_AD_PROVIDER=adsense
+Environment=INPUTSTUDIO_ADSENSE_CLIENT=ca-pub-3765496771126537
+Environment=INPUTSTUDIO_AD_SLOT_GATE=7232552638
+Environment=INPUTSTUDIO_AD_SLOT_PANEL=9667144285
+Environment=INPUTSTUDIO_AD_SLOT_PANEL_BOTTOM=4315074822
+Environment=INPUTSTUDIO_AD_SLOT_UNLOCK=6857002329
+Environment=INPUTSTUDIO_UNLOCK_AD_SECONDS=3
+
+ExecStart=/opt/inputstudio/.venv/bin/python -m uvicorn server.main:app --host 127.0.0.1 --port 8001
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

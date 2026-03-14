@@ -44,9 +44,15 @@
   "top.howto.step3": "3. Baixe o PDF / salve o projeto",
   "top.language": "Idioma",
   "top.languageMixed": "Idioma Language",
+  "top.nav.guideFull": "Guia de uso",
+  "top.nav.updates": "Atualizações",
+  "top.nav.cases": "Estudos de caso",
+  "top.nav.checklist": "Checklist antes do envio",
+  "top.nav.tagrules": "Regras de design de tags",
   "error.rateLimited": "Muitas solicitações. Tente novamente em instantes.",
   "error.uploadTooLarge": "Arquivo muito grande. Reduza o tamanho e tente novamente.",
   "error.serverBusy": "Servidor ocupado. Tente novamente em instantes.",
   "error.invalidOrder": "Ordem de páginas inválida. Reordene novamente.",
-  "error.methodNotAllowed": "Erro de conexão. Reinicie o servidor e tente novamente."
+  "error.methodNotAllowed": "Erro de conexão. Reinicie o servidor e tente novamente.",
+  "ad.unlock.badge": "Ver e continuar"
 }

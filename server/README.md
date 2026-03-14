@@ -81,6 +81,12 @@ docker-compose up -d
 4. systemdサービスを作成（下記参照）
 5. Nginxでリバースプロキシ設定
 
+HTTPS化と実広告（AdSense）を含む本番反映手順は以下を参照してください。
+
+- `server/deploy/PRODUCTION_HTTPS_ADS_ROLLOUT.md`
+- `server/deploy/inputstudio.service.example`
+- `server/deploy/nginx.inputstudio.conf.example`
+
 ## systemdサービス設定
 
 `/etc/systemd/system/inputstudio.service`:

@@ -45,9 +45,15 @@
   "top.howto.step3": "3. Tải PDF / lưu dự án",
   "top.language": "Ngôn ngữ",
   "top.languageMixed": "Ngôn ngữ Language",
+  "top.nav.guideFull": "Hướng dẫn sử dụng",
+  "top.nav.updates": "Cập nhật",
+  "top.nav.cases": "Tình huống áp dụng",
+  "top.nav.checklist": "Danh sách kiểm tra trước khi nộp",
+  "top.nav.tagrules": "Quy tắc thiết kế thẻ",
   "error.rateLimited": "Quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.",
   "error.uploadTooLarge": "Tệp tải lên quá lớn. Hãy giảm kích thước và thử lại.",
   "error.serverBusy": "Máy chủ đang bận. Vui lòng thử lại sau.",
   "error.invalidOrder": "Dữ liệu thứ tự trang không hợp lệ. Vui lòng sắp xếp lại.",
-  "error.methodNotAllowed": "Lỗi kết nối. Hãy khởi động lại máy chủ rồi thử lại."
+  "error.methodNotAllowed": "Lỗi kết nối. Hãy khởi động lại máy chủ rồi thử lại.",
+  "ad.unlock.badge": "Xem và tiếp tục"
 }

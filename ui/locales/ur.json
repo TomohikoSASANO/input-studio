@@ -44,9 +44,15 @@
   "top.howto.step3": "3. PDF ڈاؤن لوڈ / پروجیکٹ محفوظ کریں",
   "top.language": "زبان",
   "top.languageMixed": "زبان Language",
+  "top.nav.guideFull": "مکمل رہنما",
+  "top.nav.updates": "اپ ڈیٹس",
+  "top.nav.cases": "استعمالی مثالیں",
+  "top.nav.checklist": "جمع کرانے سے پہلے چیک لسٹ",
+  "top.nav.tagrules": "ٹیگ ڈیزائن اصول",
   "error.rateLimited": "درخواستیں بہت زیادہ ہیں۔ کچھ دیر بعد دوبارہ کوشش کریں۔",
   "error.uploadTooLarge": "اپلوڈ فائل بہت بڑی ہے۔ سائز کم کریں اور دوبارہ کوشش کریں۔",
   "error.serverBusy": "سرور مصروف ہے۔ کچھ دیر بعد دوبارہ کوشش کریں۔",
   "error.invalidOrder": "صفحہ ترتیب کا ڈیٹا غلط ہے۔ دوبارہ ترتیب دیں۔",
-  "error.methodNotAllowed": "کنکشن خرابی۔ سرور ری اسٹارٹ کر کے دوبارہ کوشش کریں۔"
+  "error.methodNotAllowed": "کنکشن خرابی۔ سرور ری اسٹارٹ کر کے دوبارہ کوشش کریں۔",
+  "ad.unlock.badge": "دیکھیں اور جاری رکھیں"
 }

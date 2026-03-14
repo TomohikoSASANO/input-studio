@@ -45,9 +45,15 @@
   "top.howto.step3": "3. Pobierz PDF / zapisz projekt",
   "top.language": "Język",
   "top.languageMixed": "Język Language",
+  "top.nav.guideFull": "Przewodnik użytkownika",
+  "top.nav.updates": "Aktualizacje",
+  "top.nav.cases": "Studia przypadków",
+  "top.nav.checklist": "Lista kontrolna przed wysyłką",
+  "top.nav.tagrules": "Zasady projektowania tagów",
   "error.rateLimited": "Zbyt wiele żądań. Spróbuj ponownie za chwilę.",
   "error.uploadTooLarge": "Plik jest za duży. Zmniejsz rozmiar i spróbuj ponownie.",
   "error.serverBusy": "Serwer jest zajęty. Spróbuj ponownie za chwilę.",
   "error.invalidOrder": "Nieprawidłowa kolejność stron. Uporządkuj ponownie.",
-  "error.methodNotAllowed": "Błąd połączenia. Uruchom ponownie serwer i spróbuj ponownie."
+  "error.methodNotAllowed": "Błąd połączenia. Uruchom ponownie serwer i spróbuj ponownie.",
+  "ad.unlock.badge": "Obejrzyj i kontynuuj"
 }

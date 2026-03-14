@@ -44,9 +44,15 @@
   "top.howto.step3": "3. Unduh PDF / simpan proyek",
   "top.language": "Bahasa",
   "top.languageMixed": "Bahasa Language",
+  "top.nav.guideFull": "Panduan penggunaan",
+  "top.nav.updates": "Pembaruan",
+  "top.nav.cases": "Studi kasus",
+  "top.nav.checklist": "Checklist sebelum pengiriman",
+  "top.nav.tagrules": "Aturan desain tag",
   "error.rateLimited": "Terlalu banyak permintaan. Coba lagi sebentar lagi.",
   "error.uploadTooLarge": "File unggahan terlalu besar. Kecilkan ukuran lalu coba lagi.",
   "error.serverBusy": "Server sibuk. Coba lagi sebentar lagi.",
   "error.invalidOrder": "Urutan halaman tidak valid. Atur ulang lagi.",
-  "error.methodNotAllowed": "Kesalahan koneksi. Restart server lalu coba lagi."
+  "error.methodNotAllowed": "Kesalahan koneksi. Restart server lalu coba lagi.",
+  "ad.unlock.badge": "Tonton dan lanjut"
 }

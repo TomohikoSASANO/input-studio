@@ -9,6 +9,7 @@ import os
 import sys
 import uuid
 import json
+import html
 import re
 import time
 import asyncio
@@ -80,6 +81,11 @@ _SITE_BASE_URL = str(
     os.environ.get("INPUTSTUDIO_SITE_BASE_URL", "https://pdf-input-studio.kanazawa-application-support.jp")
 ).rstrip("/")
 _SEO_LOCALES = ["ja", "en", "zh", "hi", "es", "fr", "ar", "pt", "ru", "bn", "id", "ur", "de", "it", "tr", "vi", "ko", "fa", "th", "pl", "uk", "nl"]
+_CASE_STATIC_LOCALES = {"ja", "en", "zh"}
+_CASE_DYNAMIC_LOCALES = [loc for loc in _SEO_LOCALES if loc not in _CASE_STATIC_LOCALES]
+_LP_STATIC_LOCALES = {"en"}
+_LP_DYNAMIC_LOCALES = [loc for loc in _SEO_LOCALES if loc not in _LP_STATIC_LOCALES]
+_LOCALE_CACHE: dict[str, dict[str, str]] = {}
 
 
 def _client_ip(request: Request) -> str:
@@ -126,6 +132,399 @@ def _iso_mtime(path: Path) -> str:
     except Exception:
         dt = datetime.now(timezone.utc)
     return dt.strftime("%Y-%m-%d")
+
+
+def _locale_text(loc: str, key: str, fallback: str) -> str:
+    """Read translated text from ui/locales/{loc}.json with fallback."""
+    code = (loc or "").strip().lower()
+    if not code:
+        return fallback
+    if code not in _LOCALE_CACHE:
+        fp = ROOT / "ui" / "locales" / f"{code}.json"
+        try:
+            data = json.loads(fp.read_text(encoding="utf-8"))
+            _LOCALE_CACHE[code] = data if isinstance(data, dict) else {}
+        except Exception:
+            _LOCALE_CACHE[code] = {}
+    value = _LOCALE_CACHE.get(code, {}).get(key)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return fallback
+
+
+def _render_case_hub_html(lang: str) -> str:
+    l = lang.lower()
+    title = _locale_text(l, "top.nav.cases", "Case Studies")
+    checklist = _locale_text(l, "top.nav.checklist", "Pre-submission Checklist")
+    tagrules = _locale_text(l, "top.nav.tagrules", "Tag Design Rules")
+    updates = _locale_text(l, "top.nav.updates", "Updates")
+    guide = _locale_text(l, "top.nav.guideFull", "How-to Guide")
+    home = _locale_text(l, "main.backToTop", "Back to top")
+    safe_title = html.escape(title)
+    safe_home = html.escape(home)
+    safe_checklist = html.escape(checklist)
+    safe_tagrules = html.escape(tagrules)
+    safe_updates = html.escape(updates)
+    safe_guide = html.escape(guide)
+    return f"""<!doctype html>
+<html lang="{html.escape(l)}">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{safe_title} | PDF Template Builder</title>
+    <meta name="description" content="Practical case studies for PDF Template Builder: recurring form operations, batch invoice workflows, and team handoff processes." />
+    <meta name="robots" content="index,follow" />
+    <link rel="canonical" href="{html.escape(_abs_url(f"/case-studies-{l}.html"))}" />
+    <style>
+      :root {{ --bg:#f8f7ff; --card:#ffffff; --text:#1f2330; --muted:#5b6477; --line:#dfe3ef; --accent:#7c5cff; }}
+      * {{ box-sizing: border-box; }}
+      body {{ margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; color:var(--text); background:var(--bg); }}
+      .wrap {{ max-width: 1040px; margin:0 auto; padding:24px 16px 44px; }}
+      .home {{ display:inline-block; margin-bottom:14px; color:var(--accent); text-decoration:none; font-weight:700; }}
+      .card {{ background:var(--card); border:1px solid var(--line); border-radius:16px; padding:22px; box-shadow:0 8px 24px rgba(15,23,42,.06); }}
+      h1 {{ margin:0 0 10px; font-size:30px; }}
+      p {{ color:var(--muted); line-height:1.75; }}
+      .grid {{ margin-top:12px; display:grid; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); gap:12px; }}
+      .item {{ border:1px solid var(--line); border-radius:12px; padding:14px; background:#fff; }}
+      .item h2 {{ margin:0 0 6px; font-size:18px; }}
+      .item a {{ color:var(--accent); text-decoration:none; font-weight:700; }}
+      .item a:hover {{ text-decoration:underline; }}
+      .meta {{ font-size:12px; color:#667085; margin-top:6px; }}
+      .nav {{ margin-top:20px; display:flex; flex-wrap:wrap; gap:8px; }}
+      .nav a {{ text-decoration:none; color:var(--text); border:1px solid var(--line); border-radius:999px; padding:7px 12px; background:#fff; font-size:13px; }}
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <a class="home" href="/template-builder.html">← {safe_home}</a>
+      <article class="card">
+        <h1>{safe_title}</h1>
+        <p>These practical examples show how teams run recurring document operations with reusable project ZIP workflows.</p>
+        <div class="grid">
+          <section class="item">
+            <h2>Monthly Application Updates</h2>
+            <p>How teams reuse project ZIP files and tag sync for monthly application forms.</p>
+            <a href="/case-application-monthly-{html.escape(l)}.html">Read case study</a>
+            <div class="meta">Use case: recurring forms</div>
+          </section>
+          <section class="item">
+            <h2>Batch Invoice Processing</h2>
+            <p>How back-office staff produce multiple invoice PDFs with fewer mistakes.</p>
+            <a href="/case-invoice-batch-{html.escape(l)}.html">Read case study</a>
+            <div class="meta">Use case: accounting workflow</div>
+          </section>
+          <section class="item">
+            <h2>Team Handoff Workflow</h2>
+            <p>How teams reduce rework during operator handoff with shared project ZIP operations.</p>
+            <a href="/case-team-handoff-{html.escape(l)}.html">Read case study</a>
+            <div class="meta">Use case: team collaboration</div>
+          </section>
+        </div>
+        <div class="nav">
+          <a href="/case-studies-en.html">Case Studies (EN)</a>
+          <a href="/case-studies-zh.html">Case Studies (ZH)</a>
+          <a href="/template-automation.html">Template Automation</a>
+          <a href="/pdf-template-workflow.html">Team Workflow</a>
+          <a href="/beginner-guide.html">{safe_guide}</a>
+          <a href="/document-quality-checklist.html">{safe_checklist}</a>
+          <a href="/tag-design-rules.html">{safe_tagrules}</a>
+          <a href="/updates.html">{safe_updates}</a>
+        </div>
+      </article>
+    </div>
+  </body>
+</html>
+"""
+
+
+def _render_case_detail_html(lang: str, page_key: str) -> str:
+    l = lang.lower()
+    title_map = {
+        "application-monthly": "Case Study: Monthly Application Updates",
+        "invoice-batch": "Case Study: Batch Invoice Processing",
+        "team-handoff": "Case Study: Team Handoff Workflow",
+    }
+    desc_map = {
+        "application-monthly": "How teams handle monthly application updates with reusable ZIP projects and tag-sync workflows.",
+        "invoice-batch": "How back-office teams process multiple invoice PDFs efficiently using tag updates and page-control operations.",
+        "team-handoff": "How teams reduce rework during operator handoff with project ZIP-based document operations and shared tag conventions.",
+    }
+    scenario_map = {
+        "application-monthly": "A team submits similar application forms every month with updated dates, values, and applicant information.",
+        "invoice-batch": "Finance teams create many invoice PDFs at month end for different clients and billing structures.",
+        "team-handoff": "Ongoing PDF projects are handed from one operator to another without losing context.",
+    }
+    workflow_map = {
+        "application-monthly": [
+            "Open the previous month project ZIP",
+            "Update monthly values in tag list (date, amounts, applicant fields)",
+            "Verify page sequence and supporting attachments",
+            "Run pre-submission checklist and export final PDF",
+            "Save next-month reusable ZIP package",
+        ],
+        "invoice-batch": [
+            "Start from a common invoice template ZIP",
+            "Update client-specific tag values only",
+            "Append supporting pages and reorder before export",
+            "Run checklist validation for numbers and formatting",
+            "Export per-client final PDFs",
+        ],
+        "team-handoff": [
+            "Save a project ZIP at each handoff checkpoint",
+            "Normalize tags using shared naming rules",
+            "Share checklist and expected output format",
+            "Next operator reopens ZIP, applies delta updates, and re-saves",
+        ],
+    }
+    challenges_map = {
+        "application-monthly": [
+            "Frequent copy-paste mistakes and stale values from previous month",
+            "Repeated fields across pages updated manually",
+            "Handoff quality drops when the operator changes",
+        ],
+        "invoice-batch": [
+            "Large amount of repetitive updates (client name, invoice ID, due date)",
+            "Attachments and page order differ by client",
+            "Operator-dependent steps cause quality inconsistency",
+        ],
+        "team-handoff": [
+            "Hard to know what is already done",
+            "Inconsistent tag naming across operators",
+            "Confusion between draft and final outputs",
+        ],
+    }
+    outcome_map = {
+        "application-monthly": [
+            "Lower update-miss rate for repeated fields",
+            "Faster correction cycle when forms are returned",
+            "More stable quality during operator handoff",
+        ],
+        "invoice-batch": [
+            "Standardized invoice generation process",
+            "Lower risk of copy/paste and attachment mistakes",
+            "Less month-end workload pressure",
+        ],
+        "team-handoff": [
+            "Clear project state visibility",
+            "Less rework and verification overhead",
+            "Stable quality across operator changes",
+        ],
+    }
+    path_map = {
+        "application-monthly": f"/case-application-monthly-{l}.html",
+        "invoice-batch": f"/case-invoice-batch-{l}.html",
+        "team-handoff": f"/case-team-handoff-{l}.html",
+    }
+    if page_key not in title_map:
+        raise HTTPException(status_code=404, detail="Not found")
+    safe_title = html.escape(title_map[page_key])
+    safe_desc = html.escape(desc_map[page_key])
+    safe_scenario = html.escape(scenario_map[page_key])
+    home = html.escape(_locale_text(l, "top.nav.cases", "Case Studies"))
+    scenario_lbl = "Scenario"
+    challenge_lbl = "Challenges"
+    workflow_lbl = "Workflow"
+    outcome_lbl = "Outcome"
+    rows_challenges = "\n".join(f"<li>{html.escape(v)}</li>" for v in challenges_map[page_key])
+    rows_workflow = "\n".join(f"<li>{html.escape(v)}</li>" for v in workflow_map[page_key])
+    rows_outcome = "\n".join(f"<li>{html.escape(v)}</li>" for v in outcome_map[page_key])
+    return f"""<!doctype html>
+<html lang="{html.escape(l)}">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{safe_title} | PDF Template Builder</title>
+    <meta name="description" content="{safe_desc}" />
+    <meta name="robots" content="index,follow" />
+    <link rel="canonical" href="{html.escape(_abs_url(path_map[page_key]))}" />
+    <style>
+      :root {{ --bg:#f8f7ff; --card:#fff; --text:#1f2330; --muted:#5b6477; --line:#dfe3ef; --accent:#7c5cff; }}
+      * {{ box-sizing: border-box; }}
+      body {{ margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; color:var(--text); background:var(--bg); }}
+      .wrap {{ max-width:980px; margin:0 auto; padding:24px 16px 44px; }}
+      .home {{ display:inline-block; margin-bottom:14px; color:var(--accent); text-decoration:none; font-weight:700; }}
+      .card {{ background:var(--card); border:1px solid var(--line); border-radius:16px; padding:22px; box-shadow:0 8px 24px rgba(15,23,42,.06); }}
+      h1 {{ margin:0 0 10px; font-size:30px; }} h2 {{ margin:20px 0 8px; font-size:20px; }} p, li {{ color:var(--muted); line-height:1.75; }}
+      ul, ol {{ margin:8px 0 0 20px; padding:0; }}
+      .nav {{ margin-top:20px; display:flex; flex-wrap:wrap; gap:8px; }}
+      .nav a {{ text-decoration:none; color:var(--text); border:1px solid var(--line); border-radius:999px; padding:7px 12px; background:#fff; font-size:13px; }}
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <a class="home" href="/case-studies-{html.escape(l)}.html">← {home}</a>
+      <article class="card">
+        <h1>{safe_title}</h1>
+        <p><strong>{scenario_lbl}:</strong> {safe_scenario}</p>
+        <h2>{challenge_lbl}</h2>
+        <ul>{rows_challenges}</ul>
+        <h2>{workflow_lbl}</h2>
+        <ol>{rows_workflow}</ol>
+        <h2>{outcome_lbl}</h2>
+        <ul>{rows_outcome}</ul>
+        <div class="nav">
+          <a href="/case-studies-en.html">Case Studies (EN)</a>
+          <a href="/case-studies-zh.html">Case Studies (ZH)</a>
+          <a href="/template-builder.html">Template Builder</a>
+          <a href="/pricing.html">Pricing</a>
+        </div>
+      </article>
+    </div>
+  </body>
+</html>
+"""
+
+
+def _render_template_automation_html(lang: str) -> str:
+    l = lang.lower()
+    guide = html.escape(_locale_text(l, "top.nav.guideFull", "How-to Guide"))
+    updates = html.escape(_locale_text(l, "top.nav.updates", "Updates"))
+    cases = html.escape(_locale_text(l, "top.nav.cases", "Case Studies"))
+    checklist = html.escape(_locale_text(l, "top.nav.checklist", "Pre-submission Checklist"))
+    tagrules = html.escape(_locale_text(l, "top.nav.tagrules", "Tag Design Rules"))
+    home = html.escape(_locale_text(l, "main.backToTop", "Back to top"))
+    title = "Document Template Automation | PDF Template Builder"
+    description = "Document template automation for teams using reusable PDF templates, tag sync, and project ZIP handoff workflows."
+    return f"""<!doctype html>
+<html lang="{html.escape(l)}">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{html.escape(title)}</title>
+    <meta name="description" content="{html.escape(description)}" />
+    <meta name="robots" content="index,follow" />
+    <link rel="canonical" href="{html.escape(_abs_url(f"/template-automation-{l}.html"))}" />
+    <style>
+      :root {{ --bg:#f7f8ff; --card:#fff; --text:#1f2330; --muted:#5c6578; --line:#dfe3ef; --accent:#5b56f0; }}
+      * {{ box-sizing: border-box; }}
+      body {{ margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; }}
+      .wrap {{ max-width: 980px; margin: 0 auto; padding: 24px 16px 42px; }}
+      .nav {{ display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }}
+      .nav a {{ text-decoration: none; color: var(--text); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; font-size: 13px; }}
+      .card {{ background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px; }}
+      h1 {{ margin: 0 0 10px; font-size: 30px; }}
+      h2 {{ margin: 20px 0 8px; font-size: 20px; }}
+      p, li {{ color: var(--muted); line-height: 1.75; }}
+      ul {{ margin: 8px 0 0 18px; }}
+      .cta {{ margin-top: 12px; display: flex; flex-wrap: wrap; gap: 10px; }}
+      .btn {{ text-decoration: none; border-radius: 10px; padding: 10px 14px; font-weight: 700; }}
+      .btn--primary {{ background: var(--accent); color: #fff; }}
+      .btn--soft {{ background: #fff; color: var(--text); border: 1px solid var(--line); }}
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="nav">
+        <a href="/template-builder.html">Template Builder</a>
+        <a href="/pdf-template-workflow-{html.escape(l)}.html">Team Workflow</a>
+        <a href="/case-studies-{html.escape(l)}.html">{cases}</a>
+        <a href="/">{home}</a>
+      </div>
+      <article class="card">
+        <h1>Document Template Automation for Teams</h1>
+        <p>
+          PDF Template Builder helps teams automate repetitive document updates.
+          Instead of editing the same fields many times, define reusable tags and update values in one place.
+        </p>
+        <h2>What gets automated</h2>
+        <ul>
+          <li>Repeated form fields across multiple pages and files</li>
+          <li>Project-level handoff using ZIP bundles</li>
+          <li>Combined workflows with PDF merge and split operations</li>
+        </ul>
+        <h2>Who benefits most</h2>
+        <ul>
+          <li>Operations teams handling recurring applications</li>
+          <li>Back-office staff producing standardized documents</li>
+          <li>Teams that need fast review-ready PDF outputs</li>
+        </ul>
+        <div class="cta">
+          <a class="btn btn--primary" href="/?lang={html.escape(l)}">Open App</a>
+          <a class="btn btn--soft" href="/template-builder.html">Back to Product Page</a>
+        </div>
+        <div class="nav" style="margin-top:16px;">
+          <a href="/beginner-guide.html">{guide}</a>
+          <a href="/document-quality-checklist.html">{checklist}</a>
+          <a href="/tag-design-rules.html">{tagrules}</a>
+          <a href="/updates.html">{updates}</a>
+        </div>
+      </article>
+    </div>
+  </body>
+</html>
+"""
+
+
+def _render_template_workflow_html(lang: str) -> str:
+    l = lang.lower()
+    cases = html.escape(_locale_text(l, "top.nav.cases", "Case Studies"))
+    home = html.escape(_locale_text(l, "main.backToTop", "Back to top"))
+    title = "PDF Template Workflow for Teams | PDF Template Builder"
+    description = "Learn a practical PDF template workflow for teams: build reusable templates, sync repeated values, and deliver consistent outputs faster."
+    return f"""<!doctype html>
+<html lang="{html.escape(l)}">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{html.escape(title)}</title>
+    <meta name="description" content="{html.escape(description)}" />
+    <meta name="robots" content="index,follow" />
+    <link rel="canonical" href="{html.escape(_abs_url(f"/pdf-template-workflow-{l}.html"))}" />
+    <style>
+      :root {{ --bg:#f7f8ff; --card:#fff; --text:#1f2330; --muted:#5c6578; --line:#dfe3ef; --accent:#5b56f0; }}
+      * {{ box-sizing: border-box; }}
+      body {{ margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; }}
+      .wrap {{ max-width: 980px; margin: 0 auto; padding: 24px 16px 42px; }}
+      .nav {{ display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }}
+      .nav a {{ text-decoration: none; color: var(--text); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; font-size: 13px; }}
+      .card {{ background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px; }}
+      h1 {{ margin: 0 0 10px; font-size: 30px; }}
+      h2 {{ margin: 20px 0 8px; font-size: 20px; }}
+      p, li {{ color: var(--muted); line-height: 1.75; }}
+      ol {{ margin: 8px 0 0 18px; }}
+      .cta {{ margin-top: 12px; display: flex; flex-wrap: wrap; gap: 10px; }}
+      .btn {{ text-decoration: none; border-radius: 10px; padding: 10px 14px; font-weight: 700; }}
+      .btn--primary {{ background: var(--accent); color: #fff; }}
+      .btn--soft {{ background: #fff; color: var(--text); border: 1px solid var(--line); }}
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="nav">
+        <a href="/template-builder.html">Template Builder</a>
+        <a href="/template-automation-{html.escape(l)}.html">Template Automation</a>
+        <a href="/case-studies-{html.escape(l)}.html">{cases}</a>
+        <a href="/">{home}</a>
+      </div>
+      <article class="card">
+        <h1>Team PDF Template Workflow</h1>
+        <p>
+          A practical workflow for recurring form operations. Keep templates reusable,
+          reduce manual edits, and maintain consistent outputs across your team.
+        </p>
+        <h2>Recommended 5-step flow</h2>
+        <ol>
+          <li>Start from a source PDF and place reusable tags</li>
+          <li>Define values once and sync repeated fields</li>
+          <li>Use PDF merge/split to shape deliverables</li>
+          <li>Save the whole job as project ZIP for handoff</li>
+          <li>Reopen ZIP for updates and regenerate outputs quickly</li>
+        </ol>
+        <h2>Operational benefits</h2>
+        <ol>
+          <li>Lower rework for repetitive updates</li>
+          <li>Faster onboarding with repeatable process</li>
+          <li>More consistent final PDF quality</li>
+        </ol>
+        <div class="cta">
+          <a class="btn btn--primary" href="/?lang={html.escape(l)}">Try the App</a>
+          <a class="btn btn--soft" href="/template-builder.html">Product Overview</a>
+        </div>
+      </article>
+    </div>
+  </body>
+</html>
+"""
 
 
 async def _read_upload_limited(upload_file: UploadFile, label: str) -> bytes:
@@ -971,6 +1370,100 @@ async def robots_txt():
     return Response(content=body, media_type="text/plain")
 
 
+def _case_static_file(stem: str, lang: str) -> str:
+    if stem == "hub":
+        return {"ja": "case-studies.html", "en": "case-studies-en.html", "zh": "case-studies-zh.html"}[lang]
+    if stem == "application-monthly":
+        return {"ja": "case-application-monthly.html", "en": "case-application-monthly-en.html", "zh": "case-application-monthly-zh.html"}[lang]
+    if stem == "invoice-batch":
+        return {"ja": "case-invoice-batch.html", "en": "case-invoice-batch-en.html", "zh": "case-invoice-batch-zh.html"}[lang]
+    if stem == "team-handoff":
+        return {"ja": "case-team-handoff.html", "en": "case-team-handoff-en.html", "zh": "case-team-handoff-zh.html"}[lang]
+    raise HTTPException(status_code=404, detail="Not found")
+
+
+def _lp_static_file(stem: str, lang: str) -> str:
+    if lang != "en":
+        raise HTTPException(status_code=404, detail="Not found")
+    if stem == "template-automation":
+        return "template-automation.html"
+    if stem == "pdf-template-workflow":
+        return "pdf-template-workflow.html"
+    raise HTTPException(status_code=404, detail="Not found")
+
+
+@app.get("/case-studies-{lang}.html")
+async def case_studies_by_lang(lang: str):
+    code = str(lang or "").strip().lower()
+    if code not in _SEO_LOCALES:
+        raise HTTPException(status_code=404, detail="Not found")
+    if code in _CASE_STATIC_LOCALES:
+        fp = ui_dir / _case_static_file("hub", code)
+        if fp.exists():
+            return FileResponse(str(fp), media_type="text/html")
+    return Response(content=_render_case_hub_html(code), media_type="text/html")
+
+
+@app.get("/case-application-monthly-{lang}.html")
+async def case_application_monthly_by_lang(lang: str):
+    code = str(lang or "").strip().lower()
+    if code not in _SEO_LOCALES:
+        raise HTTPException(status_code=404, detail="Not found")
+    if code in _CASE_STATIC_LOCALES:
+        fp = ui_dir / _case_static_file("application-monthly", code)
+        if fp.exists():
+            return FileResponse(str(fp), media_type="text/html")
+    return Response(content=_render_case_detail_html(code, "application-monthly"), media_type="text/html")
+
+
+@app.get("/case-invoice-batch-{lang}.html")
+async def case_invoice_batch_by_lang(lang: str):
+    code = str(lang or "").strip().lower()
+    if code not in _SEO_LOCALES:
+        raise HTTPException(status_code=404, detail="Not found")
+    if code in _CASE_STATIC_LOCALES:
+        fp = ui_dir / _case_static_file("invoice-batch", code)
+        if fp.exists():
+            return FileResponse(str(fp), media_type="text/html")
+    return Response(content=_render_case_detail_html(code, "invoice-batch"), media_type="text/html")
+
+
+@app.get("/case-team-handoff-{lang}.html")
+async def case_team_handoff_by_lang(lang: str):
+    code = str(lang or "").strip().lower()
+    if code not in _SEO_LOCALES:
+        raise HTTPException(status_code=404, detail="Not found")
+    if code in _CASE_STATIC_LOCALES:
+        fp = ui_dir / _case_static_file("team-handoff", code)
+        if fp.exists():
+            return FileResponse(str(fp), media_type="text/html")
+    return Response(content=_render_case_detail_html(code, "team-handoff"), media_type="text/html")
+
+
+@app.get("/template-automation-{lang}.html")
+async def template_automation_by_lang(lang: str):
+    code = str(lang or "").strip().lower()
+    if code not in _SEO_LOCALES:
+        raise HTTPException(status_code=404, detail="Not found")
+    if code in _LP_STATIC_LOCALES:
+        fp = ui_dir / _lp_static_file("template-automation", code)
+        if fp.exists():
+            return FileResponse(str(fp), media_type="text/html")
+    return Response(content=_render_template_automation_html(code), media_type="text/html")
+
+
+@app.get("/pdf-template-workflow-{lang}.html")
+async def pdf_template_workflow_by_lang(lang: str):
+    code = str(lang or "").strip().lower()
+    if code not in _SEO_LOCALES:
+        raise HTTPException(status_code=404, detail="Not found")
+    if code in _LP_STATIC_LOCALES:
+        fp = ui_dir / _lp_static_file("pdf-template-workflow", code)
+        if fp.exists():
+            return FileResponse(str(fp), media_type="text/html")
+    return Response(content=_render_template_workflow_html(code), media_type="text/html")
+
+
 @app.get("/sitemap.xml")
 async def sitemap_xml():
     page_paths = [
@@ -996,12 +1489,29 @@ async def sitemap_xml():
         "/case-application-monthly.html",
         "/case-invoice-batch.html",
         "/case-team-handoff.html",
+        "/case-studies-en.html",
+        "/case-application-monthly-en.html",
+        "/case-invoice-batch-en.html",
+        "/case-team-handoff-en.html",
+        "/case-studies-zh.html",
+        "/case-application-monthly-zh.html",
+        "/case-invoice-batch-zh.html",
+        "/case-team-handoff-zh.html",
     ]
     pages: list[tuple[str, str]] = []
     for path in page_paths:
         file_name = "index.html" if path == "/" else path.lstrip("/")
         fp = ui_dir / file_name
         pages.append((_abs_url(path), _iso_mtime(fp)))
+    idx_lastmod = _iso_mtime(ui_dir / "index.html")
+    for loc in _CASE_DYNAMIC_LOCALES:
+        pages.append((_abs_url(f"/case-studies-{loc}.html"), idx_lastmod))
+        pages.append((_abs_url(f"/case-application-monthly-{loc}.html"), idx_lastmod))
+        pages.append((_abs_url(f"/case-invoice-batch-{loc}.html"), idx_lastmod))
+        pages.append((_abs_url(f"/case-team-handoff-{loc}.html"), idx_lastmod))
+    for loc in _LP_DYNAMIC_LOCALES:
+        pages.append((_abs_url(f"/template-automation-{loc}.html"), idx_lastmod))
+        pages.append((_abs_url(f"/pdf-template-workflow-{loc}.html"), idx_lastmod))
     for loc in _SEO_LOCALES:
         pages.append((f"{_abs_url('/')}?lang={loc}", _iso_mtime(ui_dir / "index.html")))
     items = "\n".join(

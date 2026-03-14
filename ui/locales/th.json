@@ -45,9 +45,15 @@
   "top.howto.step3": "3. ดาวน์โหลด PDF / บันทึกโครงการ",
   "top.language": "ภาษา",
   "top.languageMixed": "ภาษา Language",
+  "top.nav.guideFull": "คู่มือการใช้งาน",
+  "top.nav.updates": "อัปเดต",
+  "top.nav.cases": "กรณีศึกษา",
+  "top.nav.checklist": "เช็กลิสต์ก่อนส่ง",
+  "top.nav.tagrules": "กฎการออกแบบแท็ก",
   "error.rateLimited": "คำขอมากเกินไป โปรดลองใหม่อีกครั้งในภายหลัง",
   "error.uploadTooLarge": "ไฟล์อัปโหลดใหญ่เกินไป โปรดลดขนาดแล้วลองใหม่",
   "error.serverBusy": "เซิร์ฟเวอร์กำลังใช้งานหนัก โปรดลองใหม่อีกครั้ง",
   "error.invalidOrder": "ลำดับหน้าไม่ถูกต้อง โปรดจัดเรียงใหม่",
-  "error.methodNotAllowed": "เกิดข้อผิดพลาดการเชื่อมต่อ โปรดรีสตาร์ตเซิร์ฟเวอร์แล้วลองใหม่"
+  "error.methodNotAllowed": "เกิดข้อผิดพลาดการเชื่อมต่อ โปรดรีสตาร์ตเซิร์ฟเวอร์แล้วลองใหม่",
+  "ad.unlock.badge": "ดูและดำเนินการต่อ"
 }

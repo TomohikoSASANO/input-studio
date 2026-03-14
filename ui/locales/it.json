@@ -45,9 +45,15 @@
   "top.howto.step3": "3. Scarica PDF / salva progetto",
   "top.language": "Lingua",
   "top.languageMixed": "Lingua Language",
+  "top.nav.guideFull": "Guida all'uso",
+  "top.nav.updates": "Aggiornamenti",
+  "top.nav.cases": "Casi d'uso",
+  "top.nav.checklist": "Checklist prima dell'invio",
+  "top.nav.tagrules": "Regole di progettazione dei tag",
   "error.rateLimited": "Troppe richieste. Riprova tra poco.",
   "error.uploadTooLarge": "File troppo grande. Riduci la dimensione e riprova.",
   "error.serverBusy": "Server occupato. Riprova tra poco.",
   "error.invalidOrder": "Ordine pagine non valido. Riordina di nuovo.",
-  "error.methodNotAllowed": "Errore di connessione. Riavvia il server e riprova."
+  "error.methodNotAllowed": "Errore di connessione. Riavvia il server e riprova.",
+  "ad.unlock.badge": "Guarda e continua"
 }
